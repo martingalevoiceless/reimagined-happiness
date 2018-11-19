@@ -1,0 +1,19 @@
+{
+    "presets": [
+        [
+            "env", {
+                  "include": ["transform-es2015-arrow-functions", "es6.map", "transform-es2015-destructuring", "es6.set"],
+            }
+        ],
+        "react"
+    ],
+    "plugins": [
+        "transform-object-rest-spread",
+        ["module-resolver", {
+            "alias": {
+                "^react-native$": "react-native-web",
+                "^react-router-native$": "react-router-dom"
+            }
+        }]
+    ]
+}
