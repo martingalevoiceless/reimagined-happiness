@@ -95,7 +95,7 @@ def compare_inner(request, path, had_preference):
                 b, = rand_video_fragments(b, 1)
                 proba, probb = request.state.model_.getprob_(a, b)
         else:
-            a, b, proba, probb = request.state.select_next()
+            a, b, proba, probb = request.state.select_next(path)
 
         return {
             "item1": a,
@@ -119,6 +119,7 @@ def get_path(request):
             d["path"] = "/" + d["parent"] + "/" + d["name"]
             del d["parent"]
             d["name"] = f"{idx:010d}." + d["name"].rpartition(".")[-1]
+            d["vpath"] = "/_sorted/" + d["name"]
             children[d["name"]] = d
         return {
             "size": 0,
@@ -129,6 +130,20 @@ def get_path(request):
             "path": "/_sorted",
             "children": children
         }
+    elif path[:1] == ("_sorted",):
+        af, bh = request.files.get_all_images()
+        name = path[1]
+        idx = int(name.partition(".")[0])
+        h = request.state.model_.sorted_hashes[-1 - idx]
+        if h not in bh: return exc.HTTPNotFound()
+        if request.state.model_.is_dropped(request.state.stats, h): return exc.HTTPNotFound()
+        d = dict(bh[h])
+        d["path"] = "/" + d["parent"] + "/" + d["name"]
+        del d["parent"]
+        d["name"] = name
+        d["vpath"] = "/_sorted/" + d["name"]
+        return d
+
 
     res = request.files.get_stat(base, *path, children=True)
     if res is None:

@@ -162,11 +162,17 @@ const Content = ({item, style, cellwidth, imgurl, onClick, big}) => {
         <Text style={styles.fileentry_magic}>{item.magic}</Text>
     </View>;
 };
-class FileEntry extends UtilComponent {
+class FileEntry_ extends UtilComponent {
+    constructor(props) {
+        super(props);
+        this.state = {
+            info: false
+        };
+    }
     render() {
         var hw = {height: this.props.cellwidth, maxWidth: this.props.cellwidth};
         return <View style={[styles.fileentry, hw]}>
-            <Link to={"/_/p" + this.props.item.path}>
+            <Link to={"/_/p" + (this.props.item.vpath || this.props.item.path)}>
                 <Content
                     style={[styles.fileentry_content, hw]}
                     item={this.props.item}
@@ -178,23 +184,67 @@ class FileEntry extends UtilComponent {
         </View>
     }
 }
+const FileEntry = with_redirector(FileEntry_);
 
-const SingleFile = ({item, imgurl, next, onClick}) => {
-    return <View style={styles.singlefile}>
-        <Content
-            style={styles.singlefile_content}
-            item={item}
-            imgurl={imgurl}
-            onClick={onClick}
-            big={true}
-        />
-        {next && 
-        <Link to={"/_/p" + (next||{}).path} style={styles.biglink}>
-        </Link>
-        }
+class SingleFile_ extends UtilComponent {
+    constructor(props) {
+        super(props);
+        this.state = {
+            info: false
+        };
+    }
+    render({item, imgurl, next, onClick}) {
+        return <View style={styles.singlefile}>
+            <Content
+                style={styles.singlefile_content}
+                item={item}
+                imgurl={imgurl}
+                onClick={onClick}
+                big={true}
+            />
+            {next && 
+            <Link to={"/_/p" + (next||{}).path} style={styles.biglink}>
+            </Link>
+            }
+            <View
+                style={this.props.info_top ? styles.info_top : styles.info_bottom}>
+            {this.state.info
+                ? 
+                        <React.Fragment>
+                            <Button
+                                onPress={() => this.setState({info: false})}
+                                title="hide"
+                                color="#999999"
+                                accessibilityLabel="hide info"
+                                />
+                            {this.props.children}
 
-    </View>
-};
+                            <Button
+                                onPress={() => this.props.redirect("/_/compare/" + this.props.item.hash + "/")}
+                                title="compare"
+                                accessibilityLabel="compare"
+                                />
+                            <Button
+                                onPress={() => this.props.redirect("/_/p" + (this.props.item.path))}
+                                title="view"
+                                accessibilityLabel="view"
+                                />
+                        </React.Fragment>
+
+                :
+                    <Button
+                        onPress={() => this.setState({info: true})}
+                        title="info"
+                        color="#999999"
+                        accessibilityLabel="info"
+                        />
+            }
+            </View>
+
+        </View>
+    };
+}
+const SingleFile = with_redirector(SingleFile_);
 
 const sortby = (array, f) => {
     array.sort((a, b) => {
@@ -571,14 +621,18 @@ class Compare_ extends React.Component {
                     imgurl={this.state.imgurl}
                     item={this.state.item1}
                     cols={1}
-                />}
-                <View style={styles.compare_info_top}>
+                    info_top={true}
+                >
+                    <View style={styles.blklst}>
                     <Button
                         onPress={() => this.request({dislike: [1,0]})}
                         title="blklst"
                         color="#be3e2e"
                         accessibilityLabel="blklst"
                         />
+                    </View>
+                </File>}
+                <View style={styles.compare_info_top}>
                     <Button
                         onPress={() => this.request({prefer: 1})}
                         title="Prefer"
@@ -587,12 +641,6 @@ class Compare_ extends React.Component {
                 </View>
             </View>
             <View style={styles.compare_buttons}>
-                <Button
-                    onPress={() => this.request({dislike: [1,1]})}
-                    title="blklst both"
-                        color="#be3e2e"
-                    accessibilityLabel="blklst both"
-                    />
                 <Button
                     onPress={() => this.request({too_close: true})}
                     title="Too Close"
@@ -614,14 +662,18 @@ class Compare_ extends React.Component {
                     imgurl={this.state.imgurl}
                     item={this.state.item2}
                     cols={1}
-                    />}
-                <View style={styles.compare_info_bottom}>
+                >
+                    <View style={styles.blklst}>
                     <Button
                         onPress={() => this.request({dislike: [0,1]})}
                         title="blklst"
+                        style={styles.blklst}
                         color="#be3e2e"
                         accessibilityLabel="blklst"
                         />
+                    </View>
+                </File>}
+                <View style={styles.compare_info_bottom}>
                     <Button
                         onPress={() => this.request({prefer: 2})}
                         title="Prefer"
@@ -648,7 +700,7 @@ const App = () => (
 
 const styles = StyleSheet.create({
     container: {
-        backgroundColor: '#115511',
+        backgroundColor: '#333333',
         height: '100%',
         //padding: 10,
     },
@@ -695,7 +747,6 @@ const styles = StyleSheet.create({
     },
     compare_info_top: {
         position: 'absolute',
-        width: '100%',
         top: 0,
         right: 0,
         flexDirection: "row",
@@ -705,11 +756,25 @@ const styles = StyleSheet.create({
     compare_info_bottom: {
         position: 'absolute',
         bottom: 0,
-        width: '100%',
         right: 0,
         flexDirection: "row",
         justifyContent: "space-between",
         alignItems: "flex-end",
+    },
+    info_top: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        flexDirection: "column",
+        justifyContent: "space-between",
+
+    },
+    info_bottom: {
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        flexDirection: "column-reverse",
+        justifyContent: "space-between",
     },
     browserlist: {
     },
@@ -759,6 +824,7 @@ const styles = StyleSheet.create({
     },
     singlefile: {
         flex: 1,
+        position: 'relative',
     },
     singlefile_title: {
         color: '#ffffff',
@@ -773,6 +839,10 @@ const styles = StyleSheet.create({
         left: 0,
         right: 0,
         bottom: 0,
+    },
+    blklst: {
+        marginTop: 40,
+        marginBottom: 40
     }
 
 })

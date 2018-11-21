@@ -44,8 +44,8 @@ class opts:
     def precision_func(cls, x):
         #(opts.min_target_precision + (pos ** opts.target_precision_curve) * opts.target_precision_top)
         #min_target_precision = 4
-        J = 6.7
-        z = 1800
+        J = 6.0
+        z = 2 ** 13
         j = 1+(J/z)
         m = 2
         return m+j**(z**x)-j
@@ -59,8 +59,8 @@ class opts:
     softmin_falloff_per_unit = 10.0
     inversion_neighborhood = 0.7
     inversion_max = 20
-    seen_suppression_max = 24*2*60*60
-    seen_suppression_min = 30
+    seen_suppression_max = 24*3*60*60
+    seen_suppression_min = 120
     seen_suppression_rate = 2
     fix_inversions = False
 
@@ -98,20 +98,19 @@ class SeenPool:
         self.seen_suppression = {}
 
     def bulk_check_seen(self):
-        with timing("bulk_check_seen"):
-            # hooray! as of 3.7, dict preserves insertion order <3
-            now = time.time()
-            if not self.seen_suppression:
-                return set()
-            k = numpy.array(list(self.seen_suppression.keys()))
-            ss = numpy.array(list(self.seen_suppression.values()))
-            ls = numpy.array(list(self.last_seen.values()))
-            #assert dict(zip(list(k), list(ss))) == self.seen_suppression
-            #assert dict(zip(list(k), list(ls))) == self.last_seen
-            r = numpy.random.lognormal(0, 1, size=len(ss))
-            ns = ls + ss * r
-            s = now < ns
-            return set(k[s])
+        # hooray! as of 3.7, dict preserves insertion order <3
+        now = time.time()
+        if not self.seen_suppression:
+            return set()
+        k = numpy.array(list(self.seen_suppression.keys()))
+        ss = numpy.array(list(self.seen_suppression.values()))
+        ls = numpy.array(list(self.last_seen.values()))
+        #assert dict(zip(list(k), list(ss))) == self.seen_suppression
+        #assert dict(zip(list(k), list(ls))) == self.last_seen
+        r = numpy.random.lognormal(0, 1, size=len(ss))
+        ns = ls + ss * r
+        s = now < ns
+        return set(k[s])
 
     def mark_seen(self, h, at=None):
         now = time.time()
@@ -373,20 +372,19 @@ class Model:
         return self.sorted_model[-1] if len(self.sorted_model)>1 else 10
 
     def getprob_(self, item1, item2):
-        with timing("getprob_"):
-            a = self.getid(item1["hash"])
-            b = self.getid(item2["hash"])
-            a_new = False
-            b_new = False
-            if a >= len(self.model):
-                a_new = True
-            if b >= len(self.model):
-                b_new = True
-            #self.calculate_ranking()
-            if not len(self.model) or a_new or b_new:
-                return f"no model yet. new: {a_new}", f"no model yet. new: {b_new}"
-            ra, rb = choix.probabilities([a, b], self.model)
-            return f"prob: {ra:.2f}, val: {self.model[a]:.4f}, new: {a_new}",f"prob: {rb:.2f}, val: {self.model[b]:.4f}, new: {b_new}"
+        a = self.getid(item1["hash"])
+        b = self.getid(item2["hash"])
+        a_new = False
+        b_new = False
+        if a >= len(self.model):
+            a_new = True
+        if b >= len(self.model):
+            b_new = True
+        #self.calculate_ranking()
+        if not len(self.model) or a_new or b_new:
+            return f"no model yet. new: {a_new}", f"no model yet. new: {b_new}"
+        ra, rb = choix.probabilities([a, b], self.model)
+        return f"prob: {ra:.2f}, val: {self.model[a]:.4f}, new: {a_new}",f"prob: {rb:.2f}, val: {self.model[b]:.4f}, new: {b_new}"
 
 
     def calculate_ranking(self, stats, extra=False):
@@ -784,16 +782,18 @@ class State:
         if not self.reap_slow():
             self.launch_slow(wait=True)
 
-    def select_next(self):
+    def select_next(self, path):
         self.reap_slow()
         #return (
         #    bh[self.model_.sorted_hashes[max(self.getidx(-max(self.model)), 0)]], 
         #    bh[self.model_.sorted_hashes[min(self.getidx(-min(self.model)), len(self.model)-1)]],
         #    "x", "x")
         print()
-        print(f"begin select_next.")
+        #print(f"begin select_next.")
         bulk_seen = self.seen.bulk_check_seen()
         print("bulk_seen:", len(bulk_seen))
+        af, _ = self.files.get_all_images()
+        print("model:", len(self.model_.model), "new pool:", len(self.model_.newh),"all_items:", len(self.model_.all_items), "all_files:", len(self.af2), "image count:", len(af))
         last_winner = None
         indices = {}
         if self.history:
@@ -827,8 +827,11 @@ class State:
                 inversions = self.model_.inversions
             else:
                 inversions = {}
-
-            if last_winner and last_winner["hash"] in base_pool:
+            if len(path) == 1 and path[0] in self.bh:
+                first = self.bh[path[0]]
+                firstlabel = "manual"
+                force_neighborhood = True
+            elif last_winner and last_winner["hash"] in base_pool:
                 first = last_winner
                 firstlabel = "last winner"
             elif random.random() < opts.high_quality_ratio and len(self.model_.sorted_hashes):
@@ -942,23 +945,22 @@ class State:
         else:
             assert False, f"Failed to find a pair. {len(self.history)}, {len(self.model_.model)}, {len(randpool)}, {len(self.model_.searching_pool)}, {last_winner}, {last_winner['hash'] in base_pool}"
 
-        with timing("last bit"):
-            proba, probb = self.model_.getprob_(first, second)
-            firstlabel += ", " + proba
-            secondlabel += ", " + probb
-            paired_up = list(zip([first, second], [firstlabel, secondlabel], [random.random()-0.5, 0]))
-            paired_up = sorted(paired_up, key=lambda x: indices.get(x[0]["hash"], x[2]))
-            pa, pb = paired_up
-            a, proba, _ = pa
-            b, probb, _ = pb
-            print("1:", proba)
-            print("2:", probb)
-            self.seen.mark_seen(a["hash"])
-            self.seen.mark_seen(b["hash"])
-            if a["hash"] not in self.model_.sorted_ids:
-                self.extra_pool.add(a["hash"])
-            if b["hash"] not in self.model_.sorted_ids:
-                self.extra_pool.add(b["hash"])
+        proba, probb = self.model_.getprob_(first, second)
+        firstlabel += ", " + proba
+        secondlabel += ", " + probb
+        paired_up = list(zip([first, second], [firstlabel, secondlabel], [random.random()-0.5, 0]))
+        paired_up = sorted(paired_up, key=lambda x: indices.get(x[0]["hash"], x[2]))
+        pa, pb = paired_up
+        a, proba, _ = pa
+        b, probb, _ = pb
+        print("1:", proba)
+        print("2:", probb)
+        self.seen.mark_seen(a["hash"])
+        self.seen.mark_seen(b["hash"])
+        if a["hash"] not in self.model_.sorted_ids:
+            self.extra_pool.add(a["hash"])
+        if b["hash"] not in self.model_.sorted_ids:
+            self.extra_pool.add(b["hash"])
         sys.stdout.flush()
         return a, b, proba, probb
 
@@ -979,26 +981,24 @@ class State:
             
         if os.path.exists(self.completionfile):
             # have one waiting to read
-            with timing("reap_slow::readback"):
-                with open(self.outputfile, "rb") as reader:
-                    packed_model = msgpack.unpack(reader, use_list=False, raw=False)
-                self.model_ = Model(*packed_model)
-                self.model_.fixh(self.fh)
-                self.removed_pool = set()
-                self.extra_pool = set()
-                self.inversion_fixes = {}
-                self.fixed_inversions = set()
-                return True
+            with open(self.outputfile, "rb") as reader:
+                packed_model = msgpack.unpack(reader, use_list=False, raw=False)
+            self.model_ = Model(*packed_model)
+            self.model_.fixh(self.fh)
+            self.removed_pool = set()
+            self.extra_pool = set()
+            self.inversion_fixes = {}
+            self.fixed_inversions = set()
+            return True
         return False
 
     def launch_slow(self, wait=False):
-        with timing("launch_slow"):
-            packed_stats = self.stats.to_msgpack()
-            packed_model = self.model_.to_msgpack(include_derived=False)
-            with open(self.inputfile, "wb") as writer:
-                msgpack.pack([packed_stats, packed_model], writer, use_bin_type=True)
-            if os.path.exists(self.completionfile):
-                os.unlink(self.completionfile)
+        packed_stats = self.stats.to_msgpack()
+        packed_model = self.model_.to_msgpack(include_derived=False)
+        with open(self.inputfile, "wb") as writer:
+            msgpack.pack([packed_stats, packed_model], writer, use_bin_type=True)
+        if os.path.exists(self.completionfile):
+            os.unlink(self.completionfile)
 
         if self.subproc is None:
             self.subproc = subprocess.Popen([sys.executable, "-m", "web", self.inputfile, self.affile, self.outputfile, self.completionfile], stdin=open("/dev/null", "rb"))
@@ -1006,19 +1006,16 @@ class State:
             self.reap_slow(True)
 
     def update(self, info, file1, file2):
-        with timing("update::save"):
-            with open("preferences.json", "a") as appender:
-                a = dict(info)
-                a["items"] = [self.bh.get(file1, {"hash": file1}), self.bh.get(file2, {"hash": file2})]
-                appender.write(json.dumps(a) + "\n")
-            pair = as_pair(file1, file2)
+        with open("preferences.json", "a") as appender:
+            a = dict(info)
+            a["items"] = [self.bh.get(file1, {"hash": file1}), self.bh.get(file2, {"hash": file2})]
+            appender.write(json.dumps(a) + "\n")
+        pair = as_pair(file1, file2)
 
-        with timing("update::update"):
-            self.history.append(a)
-            self.stats.update(a)
-            if pair in self.model_.inversions:
-                self.inversion_fixes[pair] = self.inversion_fixes.get(pair, 0) + 1
-                if self.inversion_fixes[pair] > 2 or not self.model_.check_inversion(self.stats, pair)[1]:
-                    self.fixed_inversions.add(pair)
-            print("updated from", self.model_.sorted_ids.get(file1, None), self.model_.sorted_ids.get(file2, None))
+        self.history.append(a)
+        self.stats.update(a)
+        if pair in self.model_.inversions:
+            self.inversion_fixes[pair] = self.inversion_fixes.get(pair, 0) + 1
+            if self.inversion_fixes[pair] > 2 or not self.model_.check_inversion(self.stats, pair)[1]:
+                self.fixed_inversions.add(pair)
         self.launch_slow()
