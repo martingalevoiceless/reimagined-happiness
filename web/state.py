@@ -47,7 +47,7 @@ class opts:
         J = 6.0
         z = 2 ** 13
         j = 1+(J/z)
-        m = 2
+        m = 4
         return m+j**(z**x)-j
         #target_precision_curve = 40
         #target_precision_top = 20
