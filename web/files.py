@@ -47,6 +47,7 @@ class FilesCache:
     def __init__(self, base):
         self.base = base
         self.results = {}
+        self.magics = {}
         self.vcode="5"
         self.results_from_cache = False
         try:
@@ -114,6 +115,9 @@ class FilesCache:
             #print(key)
             if key in self.results:
                 out.append(self.results[key])
+                x = self.results[key]
+                if "hash" in x and "magic" in x:
+                    self.magics[x["hash"]] = x["magic"]
             else:
                 res = self.get_stat(root, name, children=False)
                 res["parent"] = relpath_root
@@ -186,7 +190,7 @@ class FilesCache:
             print(len(self.all_images))
         return self.all_images, self.by_hash
 
-    def get_stat(self, *path, children=False):
+    def get_stat(self, *path, children=False, quick=False):
         joined = os.path.join(*path)
         try:
             s = os.stat(joined)
@@ -219,9 +223,11 @@ class FilesCache:
                         })
                 result["magic"] = "directory"
                 result["path"] += "/"
+            elif result["hash"] in self.magics:
+                result["magic"] = self.magics[result["hash"]]
             else:
                 result["magic"] = magic.from_file(joined, mime=True)
-            if result["magic"].startswith("video/"):
+            if result["magic"].startswith("video/") and not quick:
                 try:
                     videoinfo = subprocess.check_output([
                         "ffprobe",

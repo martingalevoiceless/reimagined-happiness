@@ -1,7 +1,7 @@
 import React from 'react'
 import {Platform, StyleSheet, View} from 'react-native';
 import { UtilComponent } from './util';
-import { Player, ControlBar, PlayToggle, PlaybackRateMenuButton, CurrentTimeDisplay, TimeDivider, DurationDisplay, ProgressControl, RemainingTimeDisplay, FullscreenToggle, BigPlayButton } from 'video-react';
+import { Player, VolumeMenuButton, ControlBar, PlayToggle, PlaybackRateMenuButton, CurrentTimeDisplay, TimeDivider, DurationDisplay, ProgressControl, RemainingTimeDisplay, FullscreenToggle, BigPlayButton } from 'video-react';
 import 'video-react/dist/video-react.css';
 
 class Video extends UtilComponent {
@@ -36,7 +36,7 @@ class Video extends UtilComponent {
             startTime={min_time && Math.max(min_time-4, 0)}
             autoPlay={autoplay ? true : undefined}
             src={source}
-            onPause={event => short_controls ? this.vref.current.play() : null}
+            onPause={event => {short_controls ? this.vref.current.play() : null; onClick()}}
             onTimeUpdate={event => this.timejump()}
             ref={this.vref}
         >
@@ -50,6 +50,7 @@ class Video extends UtilComponent {
                 <DurationDisplay/>
                 <ProgressControl/>
                 <RemainingTimeDisplay/>
+                <VolumeMenuButton vertical={true}/>
 
                 <PlaybackRateMenuButton rates={[5, 2, 1, 0.5, 0.1]} />
                 <FullscreenToggle/>

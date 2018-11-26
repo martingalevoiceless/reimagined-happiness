@@ -45,43 +45,45 @@ def exp_transform(params):
     return (len(weights) / weights.sum()) * weights
 
 def statdist(generator):
-    #with timing("statdist"):
-    #with timing("statdist::asarray"):
-    generator = numpy.asarray(generator)
-    n = generator.shape[0]
-    if 1 or not torch.cuda.is_available():
-        #with timing("statdist::lu_factor_numpy"):
-        lu, piv = linalg.lu_factor(generator.T, check_finite=False)
-    else:
-        with timing("statdist::to_pytorch"):
-            t_generator = torch.t(torch.from_numpy(generator).to(device))
-        with timing("statdist::lu_factor_torch"):
-            lu, piv = torch.btrifact(t_generator.reshape((-1,) + t_generator.shape),pivot=False)
-            lu = lu.reshape(t_generator.shape).cpu().numpy()
-    # The last row contains 0's only.
-    left = lu[:-1,:-1]
-    right = -lu[:-1,-1]
-    # Solves system `left * x = right`. Assumes that `left` is
-    # upper-triangular (ignores lower triangle).
-    #print("left shape:", left.shape, "right shape:", right.shape)
-    #with timing("statdist::pytorch readback 1"):
-    if 0 or not torch.cuda.is_available():
-        lc = left#.cpu().numpy()
-        rc = right#.cpu().numpy()
-        #with timing("statdist::solve_triangular"):
-        res = linalg.solve_triangular(lc, rc, check_finite=False)
-    else:
-        #with timing("pytorch version"):
-        t_res, _ = torch.trtrs(torch.from_numpy(right.reshape(right.shape+(-1,))).to(device), torch.from_numpy(left).to(device))
-        #with timing("pytorch readback"):
-        t_res = t_res.reshape([-1]).cpu().numpy()
-        res = t_res
-    #print("res", numpy.min(res), numpy.max(res), numpy.mean(res), numpy.std(res))
-    #print("t_res", numpy.min(t_res), numpy.max(t_res), numpy.mean(t_res), numpy.std(t_res))
-    #diff = t_res - res
-    #print("diff", numpy.min(diff), numpy.max(diff), numpy.mean(diff), numpy.std(diff))
-    res = numpy.append(res, 1.0)
-    return (n / res.sum()) * res
+    with timing("statdist"):
+        #with timing("statdist::asarray"):
+        generator = numpy.asarray(generator)
+        n = generator.shape[0]
+        torch_1 = False
+        torch_2 = True
+        if not torch_1 or not torch.cuda.is_available():
+            #with timing("statdist::lu_factor_numpy"):
+            lu, piv = linalg.lu_factor(generator.T, check_finite=False)
+        else:
+            with timing("statdist::to_pytorch"):
+                t_generator = torch.t(torch.from_numpy(generator).to(device))
+            with timing("statdist::lu_factor_torch"):
+                lu, piv = torch.btrifact(t_generator.reshape((-1,) + t_generator.shape),pivot=False)
+                lu = lu.reshape(t_generator.shape).cpu().numpy()
+        # The last row contains 0's only.
+        left = lu[:-1,:-1]
+        right = -lu[:-1,-1]
+        # Solves system `left * x = right`. Assumes that `left` is
+        # upper-triangular (ignores lower triangle).
+        #print("left shape:", left.shape, "right shape:", right.shape)
+        #with timing("statdist::pytorch readback 1"):
+        if not torch_2 or not torch.cuda.is_available():
+            lc = left#.cpu().numpy()
+            rc = right#.cpu().numpy()
+            #with timing("statdist::solve_triangular"):
+            res = linalg.solve_triangular(lc, rc, check_finite=False)
+        else:
+            with timing("pytorch version"):
+                t_res, _ = torch.trtrs(torch.from_numpy(right.reshape(right.shape+(-1,))).to(device), torch.from_numpy(left).to(device))
+            with timing("pytorch readback"):
+                t_res = t_res.reshape([-1]).cpu().numpy()
+                res = t_res
+        #print("res", numpy.min(res), numpy.max(res), numpy.mean(res), numpy.std(res))
+        #print("t_res", numpy.min(t_res), numpy.max(t_res), numpy.mean(t_res), numpy.std(t_res))
+        #diff = t_res - res
+        #print("diff", numpy.min(diff), numpy.max(diff), numpy.mean(diff), numpy.std(diff))
+        res = numpy.append(res, 1.0)
+        return (n / res.sum()) * res
 
 
 

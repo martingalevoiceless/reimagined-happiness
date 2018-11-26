@@ -131,7 +131,7 @@ async function fetchpath(path, params={}) {
 }
 
 
-const Content = ({item, style, cellwidth, imgurl, onClick, big}) => {
+const Content = ({item, style, cellwidth, imgurl, onClick, big, in_compare}) => {
     if (imgurl === undefined) {
         return <View/>;
     }
@@ -152,6 +152,8 @@ const Content = ({item, style, cellwidth, imgurl, onClick, big}) => {
             onClick={onClick}
             controls={big}
             autoplay={big}
+            short_controls={in_compare}
+            long_controls={!in_compare && big}
             min_time={item.min_time}
             max_time={item.max_time}
             />;
@@ -189,51 +191,57 @@ const FileEntry = with_redirector(FileEntry_);
 class SingleFile_ extends UtilComponent {
     constructor(props) {
         super(props);
-        this.state = {
-            info: false
-        };
     }
-    render({item, imgurl, next, onClick}) {
+    render({item, imgurl, next, prev, onClick}) {
         return <View style={styles.singlefile}>
             <Content
                 style={styles.singlefile_content}
                 item={item}
                 imgurl={imgurl}
-                onClick={onClick}
+                onClick={onClick || (() => { if (next && next.path) { this.props.redirect("/_/p" + next.path)}})}
                 big={true}
+                in_compare={this.props.in_compare}
             />
-            {next && 
-            <Link to={"/_/p" + (next||{}).path} style={styles.biglink}>
-            </Link>
-            }
             <View
                 style={this.props.info_top ? styles.info_top : styles.info_bottom}>
-            {this.state.info
+            {this.props.info
                 ? 
-                        <React.Fragment>
+                    <React.Fragment>
+                        <View
+                            style={this.props.info_top ? styles.info_col_top: styles.info_col_bottom}>
                             <Button
-                                onPress={() => this.setState({info: false})}
+                                onPress={() => this.props.setinfo(false)}
                                 title="hide"
                                 color="#999999"
+                                style={styles.vbutton}
                                 accessibilityLabel="hide info"
                                 />
-                            {this.props.children}
 
                             <Button
                                 onPress={() => this.props.redirect("/_/compare/" + this.props.item.hash + "/")}
                                 title="compare"
+                                style={styles.vbutton}
                                 accessibilityLabel="compare"
                                 />
                             <Button
                                 onPress={() => this.props.redirect("/_/p" + (this.props.item.path))}
                                 title="view"
+                                style={styles.vbutton}
                                 accessibilityLabel="view"
                                 />
-                        </React.Fragment>
+                            {this.props.children}
+                        </View>
+                        <View 
+                            style={styles.info_main}>
+                            {this.props.item.info && this.props.item.info.map((val, idx) => (
+                                <Text style={styles.textstyle} key={idx}>{val}</Text>
+                            ))}
+                        </View>
+                    </React.Fragment>
 
                 :
                     <Button
-                        onPress={() => this.setState({info: true})}
+                        onPress={() => this.props.setinfo(true)}
                         title="info"
                         color="#999999"
                         accessibilityLabel="info"
@@ -281,6 +289,8 @@ class Directory_ extends UtilComponent {
         var {height, width} = Dimensions.get('window');
         return <View style={styles.directory}>
             <FlatList
+                windowSize={2}
+                initialNumToRender={4}
                 key={"" + cols}
                 data={this.prop("children", [])}
                 style={styles.browserlist}
@@ -360,6 +370,7 @@ class Browser extends React.Component {
         this.state = {
             col_width: width / Math.round(width/128),
             imgurl: undefined,
+            info: false,
         };
         this.geturl();
     }
@@ -408,6 +419,23 @@ class Browser extends React.Component {
             }
             var parent;
             var j = await this.request_inner(path);
+            if (path !== this.rest()) {
+                return;
+            }
+            var jc = j.children;
+            var c = convert_jc(jc);
+            var values = {
+                j: JSON.stringify(j),
+                item: j,
+                children: c,
+                parent: parent,
+                loaded: path,
+                loading: false,
+                prev,
+                next,
+            };
+            this.setState(values);
+
             var next, prev;
             if (req1) {
                 parent = await req1;
@@ -471,6 +499,20 @@ class Browser extends React.Component {
         }
     }
     render() {
+        screen_key_callbacks = {};
+        //screen_key_callbacks['u'] = () => this.request({incomparable: true});
+        //screen_key_callbacks['i'] = () => this.request({prefer: 1});
+        //screen_key_callbacks['j'] = () => this.request({prefer: 2});
+        //screen_key_callbacks['Shift-I'] = () => this.props.redirect("/_/p" + (this.props.item1.path));
+        //screen_key_callbacks['Shift-J'] = () => this.props.redirect("/_/p" + (this.props.item2.path));
+        //screen_key_callbacks['Cmd-I'] = () => this.props.redirect("/_/compare/" + this.props.item.hash + "/");
+        //screen_key_callbacks['Cmd-J'] = () => this.props.redirect("/_/compare/" + this.props.item2.hash + "/");
+
+        //screen_key_callbacks['o'] = () => this.request({too_close: true});
+        //screen_key_callbacks['h'] = () => this.request({incomparable: true, goes_well: true});
+        screen_key_callbacks['Backspace'] = () => this.props.history.goBack();
+        screen_key_callbacks['Shift-Backspace'] = () => this.props.history.goForward();
+
         if (this.state.imgurl === undefined) {
             return <Text>loading imgurl</Text>;
         }
@@ -482,13 +524,14 @@ class Browser extends React.Component {
             cols = 3;
             
         }
+        if (cols > 8) { cols = 6; }
         var breadcrumbs = [];
         var subpaths = this.subpaths();
         for (var subpath of subpaths) {
             if (breadcrumbs.length) {
                 breadcrumbs.push(
                     <View style={styles.breadcrumb_separator} key={"sep_" + subpath.subpath}>
-                        <Text style={styles.breadcrumb_separator_text}> &gt; </Text>
+                        <Text style={styles.textstyle}> &gt; </Text>
                     </View>
                 )
             }
@@ -512,24 +555,33 @@ class Browser extends React.Component {
             </View>
             {!this.state.loading && 
             <File
+                in_compare={false}
                 prev={this.state.prev}
                 next={this.state.next}
                 imgurl={this.state.imgurl}
                 item={this.state.item}
                 children={this.state.children}
                 cols={cols}
+                info={this.state.info}
+                setinfo={info => this.setState({info})}
             />}
         </View>
     }
 }
 
-var compare_callbacks = {};
+var screen_key_callbacks = {};
 keyboard(function (event) {
-    var callback = compare_callbacks[event.key];
+    var k = event.key;
+    if (event.altKey) { k = "Alt-" + k; }
+    if (event.ctrlKey) { k = "Ctrl-" + k; }
+    if (event.shiftKey) { k = "Shift-" + k; }
+    if (event.metaKey) { k = "Meta-" + k; }
+    var callback = screen_key_callbacks[k];
     if (callback) {
         event.preventDefault();
-    }
-    if (callback && !event.altKey) {
+    } 
+    console.log(k, event);
+    if (callback) {
         callback();
     }
 });
@@ -537,7 +589,7 @@ keyboard(function (event) {
 class Compare_ extends React.Component {
     constructor(props) {
         super(props);
-        this.state = {};
+        this.state = {info: false};
         this.geturl();
     }
     async geturl() {
@@ -563,7 +615,7 @@ class Compare_ extends React.Component {
             this.setState({loading: true});
             var path = this.rest();
             var j;
-            if (comparecache[path] !== undefined && preference === undefined) {
+            if (false && comparecache[path] !== undefined && preference === undefined) {
                 j = comparecache[path];
             } else {
                 var extra = {};
@@ -581,18 +633,16 @@ class Compare_ extends React.Component {
             if (path !== this.rest()) {
                 return;
             }
-            if (j.path !== this.rest()) {
+            if (j.path && j.path !== this.rest()) {
                 console.log(j.path, this.rest(), "redirect");
-                this.props.redirect("/_/compare/" + j.path);
+                this.props.redirect("/_/compare/" + j.path, !(j.replace));
             }
             var values = {
                 j: JSON.stringify(j),
                 loadedpath: j.path,
                 viewstart: +(new Date()),
                 item1: convert_c(j.item1),
-                prob1: j.proba,
                 item2: convert_c(j.item2),
-                prob2: j.probb,
                 loading: false,
             };
             this.setState(values);
@@ -606,22 +656,33 @@ class Compare_ extends React.Component {
         }
     }
     render() {
-        compare_callbacks['u'] = () => this.request({incomparable: true});
-        compare_callbacks['i'] = () => this.request({prefer: 1});
+        screen_key_callbacks = {};
+        screen_key_callbacks['k'] = () => this.request({incomparable: true, fast: true});
+        screen_key_callbacks['o'] = () => this.request({prefer: 1, fast: true});
+        screen_key_callbacks['j'] = () => this.request({prefer: 2, fast: true});
+        screen_key_callbacks['Meta-o'] = () => this.props.redirect("/_/p" + (this.state.item1.path));
+        screen_key_callbacks['Meta-j'] = () => this.props.redirect("/_/p" + (this.state.item2.path));
+        screen_key_callbacks['Shift-O'] = () => this.props.redirect("/_/compare/" + this.state.item1.hash + "/");
+        screen_key_callbacks['Shift-J'] = () => this.props.redirect("/_/compare/" + this.state.item2.hash + "/");
 
-        compare_callbacks['j'] = () => this.request({prefer: 2});
-
-        compare_callbacks['o'] = () => this.request({too_close: true});
-        compare_callbacks['h'] = () => this.request({incomparable: true, goes_well: true});
+        screen_key_callbacks['u'] = () => this.request({undo: true, fast: true});
+        screen_key_callbacks['i'] = () => this.request({too_close: true, fast: true});
+        screen_key_callbacks[','] = () => this.request({incomparable: true, goes_well: true, fast: true});
+        screen_key_callbacks['Backspace'] = () => this.props.history.goBack();
+        screen_key_callbacks['Shift-Backspace'] = () => this.props.history.goForward();
 
         return <View style={styles.browser}>
             <View style={styles.compare_pane}>
                 {this.state.item1 && 
                 <File
+                    in_compare={true}
                     imgurl={this.state.imgurl}
                     item={this.state.item1}
+                    next={this.state.item1}
                     cols={1}
                     info_top={true}
+                    info={this.state.info}
+                    setinfo={info => this.setState({info})}
                 >
                     <View style={styles.blklst}>
                     <Button
@@ -655,13 +716,21 @@ class Compare_ extends React.Component {
                     onPress={() => this.request({incomparable: true, goes_well: true})}
                     title="goes well"
                     />
+                <Button
+                    onPress={() => this.request({undo: true})}
+                    title="undo"
+                    />
             </View>
             <View style={styles.compare_pane}>
                 {this.state.item2 && 
                 <File
+                    in_compare={true}
                     imgurl={this.state.imgurl}
                     item={this.state.item2}
+                    next={this.state.item2}
                     cols={1}
+                    info={this.state.info}
+                    setinfo={info => this.setState({info})}
                 >
                     <View style={styles.blklst}>
                     <Button
@@ -765,16 +834,36 @@ const styles = StyleSheet.create({
         position: 'absolute',
         top: 0,
         left: 0,
-        flexDirection: "column",
-        justifyContent: "space-between",
-
+        flexDirection: "row",
+        alignItems: "flex-start",
+        padding: 5,
     },
     info_bottom: {
         position: 'absolute',
         bottom: 0,
         left: 0,
+        padding: 5,
+        paddingBottom: 20,
+        flexDirection: "row",
+        alignItems: "flex-end",
+    },
+    info_col: {
+        flexDirection: "column",
+        justifyContent: "space-between",
+    },
+    info_col_bottom: {
         flexDirection: "column-reverse",
         justifyContent: "space-between",
+    },
+    info_main: {
+        backgroundColor: 'rgba(52, 52, 52, 0.3)',
+        flexDirection: "column",
+        flexGrow: 1,
+        padding: 5,
+    },
+    vbutton: {
+        marginTop: 3,
+        marginBottom: 3,
     },
     browserlist: {
     },
@@ -803,9 +892,9 @@ const styles = StyleSheet.create({
         borderColor: "#00ff00",
         backgroundColor: '#ff00ff',
         flexDirection: "row",
+        flexWrap: "wrap",
     },
     breadcrumb: {
-        flex: 1,
         flexDirection: "row",
     },
     breadcrumb_inner: {
@@ -816,17 +905,12 @@ const styles = StyleSheet.create({
         color: '#ffffff',
     },
     breadcrumb_separator: {
-        flex: 1,
-        width: 10,
-    },
-    breadcrumb_separator_text: {
-        color: '#ffffff',
     },
     singlefile: {
         flex: 1,
         position: 'relative',
     },
-    singlefile_title: {
+    textstyle: {
         color: '#ffffff',
     },
     singlefile_content: {

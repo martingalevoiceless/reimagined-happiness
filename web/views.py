@@ -93,16 +93,19 @@ def compare_inner(request, path, had_preference):
                 b = request.state.bh[b_path]
                 a, = rand_video_fragments(a, 1)
                 b, = rand_video_fragments(b, 1)
-                proba, probb = request.state.model_.getprob_(a, b)
+                proba, probb = request.state.getinfo(a, b)
         else:
             a, b, proba, probb = request.state.select_next(path)
+        a = dict(a)
+        b = dict(b)
+        a["info"] = proba
+        b["info"] = probb
 
         return {
             "item1": a,
             "item2": b,
-            "proba": proba, 
-            "probb": probb,
-            "path": a["hash"] + "/" + b["hash"]
+            "path": a["hash"] + "/" + b["hash"],
+            "replace": len(path) < 2
         }
 
 @view_config(route_name='fileinfo', request_method="GET", renderer="json")
@@ -121,7 +124,7 @@ def get_path(request):
             d["name"] = f"{idx:010d}." + d["name"].rpartition(".")[-1]
             d["vpath"] = "/_sorted/" + d["name"]
             children[d["name"]] = d
-        return {
+        res = {
             "size": 0,
             "dir": True,
             "mtime": time.time(),
@@ -142,12 +145,14 @@ def get_path(request):
         del d["parent"]
         d["name"] = name
         d["vpath"] = "/_sorted/" + d["name"]
-        return d
-
-
-    res = request.files.get_stat(base, *path, children=True)
+        res = d
+    else:
+        res = request.files.get_stat(base, *path, children=True, quick=True)
     if res is None:
         return exc.HTTPNotFound()
+    res = dict(res)
+    if "hash" in res:
+        res["info"], = request.state.getinfo(res["hash"])
     return res
 
 
