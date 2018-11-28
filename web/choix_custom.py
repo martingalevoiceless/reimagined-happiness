@@ -113,7 +113,7 @@ def lsr_pairwise(n_items, data, alpha=0.0, initial_params=None):
     return log_transform(statdist(chain))
 
 
-def ilsr_pairwise(n_items, data, alpha=0.0, initial_params=None, max_iter=100, tol=1e-4):
+def ilsr_pairwise(n_items, data, alpha=0.0, initial_params=None, max_iter=100, tol=1e-5):
     import functools
     fun = functools.partial(lsr_pairwise, n_items=n_items, data=data, alpha=alpha)
     return _ilsr(fun, initial_params, max_iter, tol)
