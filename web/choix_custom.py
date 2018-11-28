@@ -52,8 +52,8 @@ def statdist(generator):
         torch_1 = False
         torch_2 = True
         if not torch_1 or not torch.cuda.is_available():
-            #with timing("statdist::lu_factor_numpy"):
-            lu, piv = linalg.lu_factor(generator.T, check_finite=False)
+            with timing("statdist::lu_factor_numpy"):
+                lu, piv = linalg.lu_factor(generator.T, check_finite=False)
         else:
             with timing("statdist::to_pytorch"):
                 t_generator = torch.t(torch.from_numpy(generator).to(device))
@@ -113,7 +113,7 @@ def lsr_pairwise(n_items, data, alpha=0.0, initial_params=None):
     return log_transform(statdist(chain))
 
 
-def ilsr_pairwise(n_items, data, alpha=0.0, initial_params=None, max_iter=100, tol=1e-8):
+def ilsr_pairwise(n_items, data, alpha=0.0, initial_params=None, max_iter=100, tol=1e-4):
     import functools
     fun = functools.partial(lsr_pairwise, n_items=n_items, data=data, alpha=alpha)
     return _ilsr(fun, initial_params, max_iter, tol)

@@ -44,26 +44,40 @@ def extract_time(f, start, stop):
     return f
 
 class FilesCache:
-    def __init__(self, base):
+    def __init__(self, base, cache=True):
         self.base = base
         self.results = {}
         self.magics = {}
+        self.videos = {}
         self.vcode="5"
         self.results_from_cache = False
+        loaded_results = None
         try:
             with open('/tmp/allfiles', 'r') as reader:
-                self.results = json.loads(reader.read())
-                self.results_from_cache = True
+                loaded_results = json.loads(reader.read())
         except FileNotFoundError:
             pass
+        if loaded_results is not None:
+            if cache:
+                self.results = loaded_results
+                self.results_from_cache = True
+            for x in loaded_results.values():
+                if "hash" in x and "magic" in x:
+                    self.magics[x["hash"]] = x["magic"]
+                if "video" in x:
+                    vinfo = {"video": x["video"]}
+                    if "video_err" in x:
+                        vinfo["video_err"] = x["video_err"]
+                    self.videos[x["hash"]] = vinfo
         self.entries = []
         self.entries_from_cache = False
-        try:
-            with open('/tmp/allfiles_e_c'+self.vcode, 'r') as reader:
-                self.entries = json.loads(reader.read())
-                self.entries_from_cache = True
-        except FileNotFoundError:
-            pass
+        if cache:
+            try:
+                with open('/tmp/allfiles_e_c'+self.vcode, 'r') as reader:
+                    self.entries = json.loads(reader.read())
+                    self.entries_from_cache = True
+            except FileNotFoundError:
+                pass
 
         self.allfiles = []
         self.all_images = []
@@ -116,8 +130,6 @@ class FilesCache:
             if key in self.results:
                 out.append(self.results[key])
                 x = self.results[key]
-                if "hash" in x and "magic" in x:
-                    self.magics[x["hash"]] = x["magic"]
             else:
                 res = self.get_stat(root, name, children=False)
                 res["parent"] = relpath_root
@@ -227,7 +239,10 @@ class FilesCache:
                 result["magic"] = self.magics[result["hash"]]
             else:
                 result["magic"] = magic.from_file(joined, mime=True)
-            if result["magic"].startswith("video/") and not quick:
+            if result["hash"] in self.videos:
+                result.update(self.videos[result["hash"]])
+            elif result["magic"].startswith("video/") and not quick:
+                vinfo = {}
                 try:
                     videoinfo = subprocess.check_output([
                         "ffprobe",
@@ -237,11 +252,13 @@ class FilesCache:
                         "-show_format",
                         "-show_streams",
                     ])
-                    result["video"] = json.loads(videoinfo)
+                    vinfo["video"] = json.loads(videoinfo)
                 except (subprocess.CalledProcessError, json.JSONDecodeError)  as e:
                     print("error getting video", e)
-                    result["video"] = None
-                    result["video_err"] = repr(e)
+                    vinfo["video"] = None
+                    vinfo["video_err"] = repr(e)
+                self.videos[result["hash"]] = vinfo
+                result.update(vinfo)
         except OSError as e:
             result = {
                 "error": "oserror",
@@ -253,3 +270,6 @@ class FilesCache:
                 "name": os.path.basename(joined)
             }
         return result
+
+if __name__ == "__main__":
+    FilesCache(sys.argv[-1], cache=False)

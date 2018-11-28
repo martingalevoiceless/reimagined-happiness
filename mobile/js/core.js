@@ -612,7 +612,7 @@ class Compare_ extends React.Component {
     }
     async request(preference) {
         try {
-            this.setState({loading: true});
+            this.setState({loading: true, derp: !this.state.derp});
             var path = this.rest();
             var j;
             if (false && comparecache[path] !== undefined && preference === undefined) {
@@ -693,7 +693,7 @@ class Compare_ extends React.Component {
                         />
                     </View>
                 </File>}
-                <View style={styles.compare_info_top}>
+                <View style={this.state.derp ? styles.compare_info_top : styles.compare_info_top2}>
                     <Button
                         onPress={() => this.request({prefer: 1})}
                         title="Prefer"
@@ -742,7 +742,7 @@ class Compare_ extends React.Component {
                         />
                     </View>
                 </File>}
-                <View style={styles.compare_info_bottom}>
+                <View style={this.state.derp ? styles.compare_info_bottom : styles.compare_info_bottom2}>
                     <Button
                         onPress={() => this.request({prefer: 2})}
                         title="Prefer"
@@ -813,6 +813,22 @@ const styles = StyleSheet.create({
         marginBottom: 4,
         flexDirection: "row",
         position: 'relative',
+    },
+    compare_info_top2: {
+        position: 'absolute',
+        top: 60,
+        right: 0,
+        flexDirection: "row",
+        justifyContent: "space-between",
+
+    },
+    compare_info_bottom2: {
+        position: 'absolute',
+        bottom: 60,
+        right: 0,
+        flexDirection: "row",
+        justifyContent: "space-between",
+        alignItems: "flex-end",
     },
     compare_info_top: {
         position: 'absolute',

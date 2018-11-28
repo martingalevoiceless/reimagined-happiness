@@ -40,6 +40,7 @@ class opts:
     high_quality_ratio = 0.0
 
     min_clean_compares = 2
+    goat_window = 0.2
     @classmethod
     def precision_func(cls, x):
         #(opts.min_target_precision + (pos ** opts.target_precision_curve) * opts.target_precision_top)
@@ -52,17 +53,18 @@ class opts:
         #target_precision_curve = 40
         #target_precision_top = 20
     drop_ratio = 20
-    drop_min = 4
+    drop_min = 7
     model_drop_min = 4
     max_delay = 10
     inversion_threshold = 0.2222
     softmin_falloff_per_unit = 10.0
-    inversion_neighborhood = 0.7
-    inversion_max = 20
+    inversion_neighborhood = 0.2
+    inversion_max = 3
     seen_suppression_max = 24*20*60*60
     seen_suppression_min = 120
     seen_suppression_rate = 4
-    fix_inversions = False
+    fix_inversions = True
+    inversion_ratio = 1
 
 def softmax(x):
     e_x = numpy.exp(x - numpy.max(x))
@@ -452,19 +454,23 @@ class Model:
         #if high > modelmax: lidx += max((delta - 2), 1)
         #if debug: print(pos, delta, low, high, widx, lidx)
         seen_enough = len(vals[0]) + len(vals[1]) > opts.min_clean_compares
-        finished_enough = abs(lidx - widx) < delta * 2
+        finished_enough = max(0, lidx - widx) < delta * 2
+        is_goat = widx >= modelmax - opts.goat_window
         info = {
             "finished_enough": finished_enough,
             "seen_enough": seen_enough,
+            "is_goat": is_goat,
             "prec": prec,
             "midx": midx,
+            "lidx": lidx,
+            "widx": widx,
             "mid": mid,
             "pos": pos,
             "delta": delta,
             "high": high,
             "low": low,
         }
-        if seen_enough and finished_enough and not force:
+        if (is_goat or len(vals[1]) > 1) and seen_enough and finished_enough and not force:
             return None,info
         return midx,info
 
@@ -853,7 +859,7 @@ class State:
             base_pool = ((self.model_.searching_pool.keys() | self.extra_pool) - self.removed_pool)
             randpool_set = base_pool #- bulk_seen
             randpool =  list(randpool_set)
-            print(f"randpool size: {len(randpool)}")
+            print(f"randpool size: {len(randpool)}, inversions: {len(self.model_.inversions)}")
             prior = None
 
             force = x > 30
@@ -863,7 +869,7 @@ class State:
                 bulk_seen = self.seen.bulk_check_seen(m)
                 print(f"decay bulk seen by {m}, new size {len(bulk_seen)}")
             if opts.fix_inversions or x > 20:
-                inversions = self.model_.inversions
+                inversions = {x: y for x,y in self.model_.inversions.items() if x not in self.fixed_inversions}
             else:
                 inversions = {}
             if len(path) == 1 and path[0] in self.bh:
@@ -893,12 +899,12 @@ class State:
                     continue
                 first = self.bh[h]
                 firstlabel = f"high-quality ({hidx}/{len(self.model_.sorted_hashes)}):"
-            elif (random.random() > (len(randpool) + len(inversions)) / opts.explore_target and len(self.model_.newh)):
+            elif (random.random() > len(randpool) / opts.explore_target and len(self.model_.newh)):
                 firsth = numpy.random.choice(self.model_.newh, p=self.model_.new)
                 prior = self.model_.newp[firsth]
                 first = self.bh[firsth]
                 firstlabel = "explore"
-            elif random.randrange(0, len(randpool) + len(inversions)) < len(randpool):
+            elif random.randrange(0, len(randpool) + len(inversions)/opts.inversion_ratio) < len(randpool):
                 h = random.choice(randpool)
                 if h not in self.bh:
                     print("fail on missing randpool item")
@@ -910,6 +916,10 @@ class State:
                     pair, prob = random.choice(list(inversions.items()))
                     if random.random() < prob:
                         break
+                    if pair[0] in bulk_seen or pair[1] in bulk_seen:
+                        continue
+                    if not self.model_.check_inversion(self.stats, pair)[1]:
+                        continue
                 else:
                     print("pulled 10 items from inversions pool, all too close to bother with")
                     continue
@@ -938,7 +948,8 @@ class State:
                             dists[1].append(other_val)
                         else:
                             continue
-                    idx, _ = self.model_.calc_next_index(firsthash, dists, {}, debug=True, force=force_neighborhood)
+                    idx, info = self.model_.calc_next_index(firsthash, dists, {}, debug=True, force=force_neighborhood)
+                    print("calc_next_index info:", firsthash, dists, info, idx, force_neighborhood)
                     if idx is None:
                         print(f"attempted neighborhood on {firsthash}, but next index None, marking done")
                         self.removed_pool.add(firsthash)
