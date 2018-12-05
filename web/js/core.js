@@ -198,7 +198,7 @@ class SingleFile_ extends UtilComponent {
                 style={styles.singlefile_content}
                 item={item}
                 imgurl={imgurl}
-                onClick={onClick || (() => { if (next && next.path) { this.props.redirect("/_/p" + next.path)}})}
+                onClick={onClick || (() => { if (next && (next.vpath||next.path)) { this.props.redirect("/_/p" + (next.vpath||next.path))}})}
                 big={true}
                 in_compare={this.props.in_compare}
             />
@@ -612,7 +612,7 @@ class Compare_ extends React.Component {
     }
     async request(preference) {
         try {
-            this.setState({loading: true, derp: !this.state.derp});
+            this.setState({loading: true});
             var path = this.rest();
             var j;
             if (false && comparecache[path] !== undefined && preference === undefined) {
@@ -633,6 +633,7 @@ class Compare_ extends React.Component {
             if (path !== this.rest()) {
                 return;
             }
+            this.setState({derp: !this.state.derp});
             if (j.path && j.path !== this.rest()) {
                 console.log(j.path, this.rest(), "redirect");
                 this.props.redirect("/_/compare/" + j.path, !(j.replace));

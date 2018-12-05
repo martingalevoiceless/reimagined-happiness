@@ -8,6 +8,8 @@ class Video extends UtilComponent {
     constructor(props) {
         super(props);
         this.vref = React.createRef();
+        this.backoff =1;
+        this.backoff_tick = 0;
     }
     componentDidMount() {
         console.log(this.vref);
@@ -19,11 +21,33 @@ class Video extends UtilComponent {
         if (!this.vref.current) { return; }
         var player = (this.vref.current.getState() || {}).player;
         if (!player) { return; }
-        var submin1 = Math.max(this.props.min_time-4, 0);
-        var submin2 = Math.max(this.props.min_time-5, 0);
-        if (this.props.max_time !== undefined && (player.currentTime > this.props.max_time || player.currentTime < submin2)) {
-            this.vref.current.seek(submin1)
+        var submin1 = Math.max(this.props.min_time-1, 0);
+        var submin2 = Math.max(this.props.min_time-2, 0);
+        if (this.props.max_time !== undefined) {
+            if ((player.currentTime > this.props.max_time || player.currentTime < submin2)) {
+                if (this.backoff_tick == 0) {
+                    this.vref.current.play();
+                    this.vref.current.seek(submin1);
+                    this.pause_expected=1;
+                    this.backoff_tick = this.backoff;
+                    this.backoff *= 2;
+                    this.backoff = Math.min(6, this.backoff);
+                } else {
+                    this.backoff_tick -= 1;
+                    this.pause_expected=1;
+                    this.vref.current.pause();
+                    if (!this.waiting){
+                        this.waiting = true;
+                    }
+                }
+            } else {
+                this.vref.current.play();
+                this.pause_expected=0;
+                this.backoff = 1;
+                this.backoff_tick=0;
+            }
         }
+        setTimeout(() => {if(!this.dying){this.waiting = false; this.timejump()}}, 200);
 
     }
     render({source, style, autoplay=true, short_controls=true, long_controls=false, onClick, pad=90, min_time, max_time}) {
@@ -36,7 +60,7 @@ class Video extends UtilComponent {
             startTime={min_time && Math.max(min_time-4, 0)}
             autoPlay={autoplay ? true : undefined}
             src={source}
-            onPause={event => {short_controls ? this.vref.current.play() : null; onClick()}}
+            onPause={event => {if(!this.pause_expected){short_controls ? this.vref.current.play() : onClick();  }}}
             onTimeUpdate={event => this.timejump()}
             ref={this.vref}
         >

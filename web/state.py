@@ -60,7 +60,7 @@ class opts:
     softmin_falloff_per_unit = 10.0
     inversion_neighborhood = 0.2
     inversion_max = 3
-    seen_suppression_max = 24*20*60*60
+    seen_suppression_max = 24*5*60*60
     seen_suppression_min = 120
     seen_suppression_rate = 4
     fix_inversions = True
@@ -499,7 +499,11 @@ class Model:
 
     def check_inversion(self, stats, pair):
         rel_wins = stats.pair_wins.get(pair, [0, 0])
-        win_prob = choix.probabilities([self.getid(pair[0]), self.getid(pair[1])], self.model)[0]
+        a = self.getid(pair[0])
+        b = self.getid(pair[1])
+        if a >= len(self.model) or b >= len(self.model):
+            return 0.5, False
+        win_prob = choix.probabilities([a, b], self.model)[0]
         win_ratio = (rel_wins[0]) / (rel_wins[0] + rel_wins[1])
         if win_ratio < 0.5:
             win_prob = 1-win_prob
@@ -705,7 +709,7 @@ class Model:
                         #print(dn, "smean,std:", smean, std, "mean:", mean, "std:", numpy.sqrt(var), "p_std:", numpy.sqrt(var*len(vs)), "n:", len(vs))
                     mean, var = cc[dn]
                 stddev = numpy.sqrt(var)
-                new.append(mean - 8 * stddev)
+                new.append(mean*4)
                 newh.append(h)
                 newp[h] = mean
             self.new = softmax(new)
