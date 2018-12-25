@@ -623,6 +623,8 @@ class Compare_ extends React.Component {
                     extra = {headers: {"content-type": "application/json"}, "method": "PUT", "body": JSON.stringify({
                         viewstart: this.state.viewstart,
                         viewend: +(new Date()),
+                        hor: this.state.hor,
+                        os: Platform.OS,
                         preference
                     })};
                 }
@@ -661,6 +663,7 @@ class Compare_ extends React.Component {
         screen_key_callbacks['k'] = () => this.request({incomparable: true, fast: true});
         screen_key_callbacks['o'] = () => this.request({prefer: 1, fast: true});
         screen_key_callbacks['j'] = () => this.request({prefer: 2, fast: true});
+        screen_key_callbacks['t'] = () => this.setState({hor: !this.state.hor});
         screen_key_callbacks['Meta-o'] = () => this.props.redirect("/_/p" + (this.state.item1.path));
         screen_key_callbacks['Meta-j'] = () => this.props.redirect("/_/p" + (this.state.item2.path));
         screen_key_callbacks['Shift-O'] = () => this.props.redirect("/_/compare/" + this.state.item1.hash + "/");
@@ -672,8 +675,30 @@ class Compare_ extends React.Component {
         screen_key_callbacks['Backspace'] = () => this.props.history.goBack();
         screen_key_callbacks['Shift-Backspace'] = () => this.props.history.goForward();
 
-        return <View style={styles.browser}>
-            <View style={styles.compare_pane}>
+        var dir = {
+            browser: styles.browser,
+            compare_pane: styles.compare_pane,
+            compare_buttons: styles.compare_buttons,
+            too_close: "Too Close",
+            incomparable:"Incomparable",
+            goes: "Goes Well",
+            undo: "Undo",
+            transpose: "Transpose"
+        };
+        if (this.state.hor) {
+            dir = {
+                browser: styles.browser_hor,
+                compare_pane: styles.compare_pane_hor,
+                compare_buttons: styles.compare_buttons_hor,
+                too_close: "==",
+                incomparable:"!=",
+                goes: "+=",
+                undo: "U",
+                transpose: "T",
+            };
+        }
+        return <View style={dir.browser}>
+            <View style={dir.compare_pane}>
                 {this.state.item1 && 
                 <File
                     in_compare={true}
@@ -702,24 +727,28 @@ class Compare_ extends React.Component {
                         />
                 </View>
             </View>
-            <View style={styles.compare_buttons}>
+            <View style={dir.compare_buttons}>
                 <Button
                     onPress={() => this.request({too_close: true})}
-                    title="Too Close"
+                    title={dir.too_close}
                     accessibilityLabel="Too close to call"
                     />
                 <Button
                     onPress={() => this.request({incomparable: true})}
-                    title="Incomparable"
+                    title={dir.incomparable}
                     accessibilityLabel="Doesn't make sense to compare"
                     />
                 <Button
                     onPress={() => this.request({incomparable: true, goes_well: true})}
-                    title="goes well"
+                    title={dir.goes}
                     />
                 <Button
                     onPress={() => this.request({undo: true})}
-                    title="undo"
+                    title={dir.undo}
+                    />
+                <Button
+                    onPress={() => this.setState({hor: !this.state.hor})}
+                    title={dir.transpose}
                     />
             </View>
             <View style={styles.compare_pane}>
@@ -804,8 +833,24 @@ const styles = StyleSheet.create({
         paddingTop: 25,
         flex: 1,
     },
+    browser_hor: {
+        paddingTop: 25,
+        flex: 1,
+        flexDirection: 'row-reverse',
+    },
     compare_pane: {
         flex: 1,
+        position: 'relative',
+    },
+    compare_pane_hor: {
+        flex: 1,
+        position: 'relative',
+    },
+    compare_buttons_hor: {
+        width: 24,
+        marginLeft: 4,
+        marginRight: 4,
+        flexDirection: "column",
         position: 'relative',
     },
     compare_buttons: {

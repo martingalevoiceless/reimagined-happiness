@@ -44,7 +44,8 @@ def extract_time(f, start, stop):
     return f
 
 class FilesCache:
-    def __init__(self, base, cache=True):
+    def __init__(self, base, cache=True, save=True):
+        self.save = save
         self.base = base
         self.results = {}
         self.magics = {}
@@ -99,12 +100,13 @@ class FilesCache:
             print(root)
             for name in dirs + files:
                 self.entries.append((root, name))
-        try:
-            os.rename("/tmp/allfiles_e_c"+self.vcode, "/tmp/allfiles_e_c" + self.vcode + "." + str(int(time.time())))
-        except FileNotFoundError:
-            pass
-        with open("/tmp/allfiles_e_c"+self.vcode, "w")  as writer:
-            writer.write(json.dumps(self.entries))
+        if self.save:
+            try:
+                os.rename("/tmp/allfiles_e_c"+self.vcode, "/tmp/allfiles_e_c" + self.vcode + "." + str(int(time.time())))
+            except FileNotFoundError:
+                pass
+            with open("/tmp/allfiles_e_c"+self.vcode, "w")  as writer:
+                writer.write(json.dumps(self.entries))
         print("scan done")
         return self.entries
 
@@ -147,7 +149,7 @@ class FilesCache:
                 else:
                     lastqq = len(self.results) // KK
         sys.stdout.flush()
-        if not self.results_from_cache:
+        if self.save and not self.results_from_cache:
             print("saving, progress:", len(self.results), len(self.entries), 100 * len(self.results) / len(self.entries))
             try:
                 os.rename("/tmp/allfiles", "/tmp/allfiles." + str(int(time.time())))

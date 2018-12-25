@@ -47,19 +47,13 @@ def exp_transform(params):
 def statdist(generator):
     with timing("statdist"):
         #with timing("statdist::asarray"):
-        generator = numpy.asarray(generator)
         n = generator.shape[0]
-        torch_1 = False
-        torch_2 = True
-        if not torch_1 or not torch.cuda.is_available():
-            with timing("statdist::lu_factor_numpy"):
-                lu, piv = linalg.lu_factor(generator.T, check_finite=False)
-        else:
-            with timing("statdist::to_pytorch"):
-                t_generator = torch.t(torch.from_numpy(generator).to(device))
-            with timing("statdist::lu_factor_torch"):
-                lu, piv = torch.btrifact(t_generator.reshape((-1,) + t_generator.shape),pivot=False)
-                lu = lu.reshape(t_generator.shape).cpu().numpy()
+        with timing("statdist::to_pytorch"):
+            t_generator = torch.t(torch.from_numpy(generator.astype("float32")).to(device))
+        with timing("statdist::lu_factor_torch"):
+            _, lu = torch.gesv(torch.ones([n, 1], dtype=torch.float32).to(device), t_generator)
+            #_, lu = torch.btrifact(t_generator.reshape((-1,) + t_generator.shape),pivot=False)
+            #lu = lu.reshape(t_generator.shape).cpu().numpy()
         # The last row contains 0's only.
         left = lu[:-1,:-1]
         right = -lu[:-1,-1]
@@ -67,17 +61,11 @@ def statdist(generator):
         # upper-triangular (ignores lower triangle).
         #print("left shape:", left.shape, "right shape:", right.shape)
         #with timing("statdist::pytorch readback 1"):
-        if not torch_2 or not torch.cuda.is_available():
-            lc = left#.cpu().numpy()
-            rc = right#.cpu().numpy()
-            #with timing("statdist::solve_triangular"):
-            res = linalg.solve_triangular(lc, rc, check_finite=False)
-        else:
-            with timing("pytorch version"):
-                t_res, _ = torch.trtrs(torch.from_numpy(right.reshape(right.shape+(-1,))).to(device), torch.from_numpy(left).to(device))
-            with timing("pytorch readback"):
-                t_res = t_res.reshape([-1]).cpu().numpy()
-                res = t_res
+        with timing("pytorch version"):
+            t_res, _ = torch.trtrs(right.reshape(right.shape+(-1,)), left)
+        with timing("pytorch readback"):
+            t_res = t_res.reshape([-1]).cpu().numpy()
+            res = t_res
         #print("res", numpy.min(res), numpy.max(res), numpy.mean(res), numpy.std(res))
         #print("t_res", numpy.min(t_res), numpy.max(t_res), numpy.mean(t_res), numpy.std(t_res))
         #diff = t_res - res
@@ -87,33 +75,22 @@ def statdist(generator):
 
 
 
-def _init_lsr(n_items, alpha, initial_params):
-    if initial_params is None:
-        weights = numpy.ones(n_items)
-    else:
-        weights = exp_transform(initial_params)
-    chain = alpha * numpy.ones((n_items, n_items), dtype=float)
-    return weights, chain
 
 
-def _ilsr(fun, params, max_iter, tol):
+def ilsr_pairwise(n_items, data, alpha=0.0, params=None, max_iter=100, tol=1e-5):
     converged = NormOfDifferenceTest(tol, order=1)
     for iteration in range(max_iter):
-        params = fun(initial_params=params)
+        if params is None:
+            weights = numpy.ones(n_items)
+        else:
+            weights = exp_transform(params)
+            converged(params)
+        chain = alpha * numpy.ones((n_items, n_items), dtype=float)
+        for winner, loser, count in data:
+            if not count: continue
+            chain[loser, winner] += count * (1 / (weights[winner] + weights[loser]))
+        chain -= numpy.diag(chain.sum(axis=1))
+        params = log_transform(statdist(chain))
         if converged(params):
             break
     return params, iteration, converged.dist, converged.dist / len(params)
-
-
-def lsr_pairwise(n_items, data, alpha=0.0, initial_params=None):
-    weights, chain = _init_lsr(n_items, alpha, initial_params)
-    for winner, loser in data:
-        chain[loser, winner] += 1 / (weights[winner] + weights[loser])
-    chain -= numpy.diag(chain.sum(axis=1))
-    return log_transform(statdist(chain))
-
-
-def ilsr_pairwise(n_items, data, alpha=0.0, initial_params=None, max_iter=100, tol=1e-5):
-    import functools
-    fun = functools.partial(lsr_pairwise, n_items=n_items, data=data, alpha=alpha)
-    return _ilsr(fun, initial_params, max_iter, tol)

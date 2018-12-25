@@ -15,11 +15,6 @@ from .files import duration, extract_time, ue
 # text
     #TODO: clip extraction from text
     #TODO: download text datasets
-# mobile
-    #TODO: fix actual-mobile ui
-    #TODO: mobile videos
-# scanning
-    #TODO: better exclusion
 # data collection
     #TODO: allow painting a winning region
     #TODO: "which is more similar" queries
@@ -56,15 +51,15 @@ class opts:
     drop_min = 7
     model_drop_min = 4
     max_delay = 10
-    inversion_threshold = 0.2222
+    inversion_threshold = 0.45
     softmin_falloff_per_unit = 10.0
-    inversion_neighborhood = 0.2
+    inversion_neighborhood = 0.1
     inversion_max = 3
     seen_suppression_max = 24*5*60*60
     seen_suppression_min = 120
     seen_suppression_rate = 4
     fix_inversions = True
-    inversion_ratio = 1
+    inversion_ratio = 100
 
 def softmax(x):
     e_x = numpy.exp(x - numpy.max(x))
@@ -128,7 +123,6 @@ class SeenPool:
         assert ls > now / 10
         self.last_seen[h] = int(at)
         delta = at - ls
-        assert delta < 60*60*24*30
         if delta < 0: print(f"warning: delta not greater than zero: {delta} - {h}")
         delta = max(delta, 0)
         self.seen_suppression[h] = max(int(squash(self.seen_suppression.get(h, opts.seen_suppression_min) * opts.seen_suppression_rate - delta, opts.seen_suppression_max)), opts.seen_suppression_min)
@@ -190,12 +184,12 @@ class Stats:
     #    included = not (ratio > opts.winning_ratio or ratio < opts.losing_ratio or (wins + losses) > opts.max_shows)
     #    return ratio, included
 
-    def record_win(self, winning, losing):
-        self.win_counts[winning["hash"]] = self.win_counts.get(winning["hash"], 0) + 1
-        self.loss_counts[losing["hash"]] = self.loss_counts.get(losing["hash"], 0) + 1
+    def record_win(self, winning, losing, decay):
+        self.win_counts[winning["hash"]] = self.win_counts.get(winning["hash"], 0) + decay
+        self.loss_counts[losing["hash"]] = self.loss_counts.get(losing["hash"], 0) + decay
         #w_ratio, w_incl = self.update_ratios(winning["hash"])
         #l_ratio, l_incl = self.update_ratios(losing["hash"])
-        pair, values = as_pair(winning, losing, 1, 0)
+        pair, values = as_pair(winning, losing, decay, 0)
 
         if pair in self.pair_wins:
             w1, w2 = self.pair_wins[pair]
@@ -208,6 +202,8 @@ class Stats:
         #print(f'incremented winner win count to {self.win_counts[winning["hash"]]}, loser lose count to {self.loss_counts[losing["hash"]]} (flc: {self.filtered_loss_counts.get(losing["hash"], None)}; w: {w_ratio:0.2f}, {w_incl}; l: {l_ratio:0.2f}, {l_incl})')
 
     def update(self, item):
+        age = time.time() - (item.get("viewend", 0) / 1000)
+        decay = 1/(1+age / (60 * 60 * 24 * 60))
         item["dur"] = item.get("viewend", 0)-item.get("viewstart", 0)
         if item.get("dur",0)<opts.minview and not item.get("fast"):
             print("skipped due to too-low view duration", item)
@@ -236,15 +232,15 @@ class Stats:
         if any(dislike): return
 
         if too_close:
-            self.too_close[pair] = self.too_close.get(pair, 0) + 1
+            self.too_close[pair] = self.too_close.get(pair, 0) + decay
             #self.record_win(*item["items"])
             #self.record_win(*item["items"][::-1])
         elif incomparable:
-            self.incomparable_pairs[pair] = self.incomparable_pairs.get(pair, 0) + 1
+            self.incomparable_pairs[pair] = self.incomparable_pairs.get(pair, 0) + decay
         else:
             winning = item["items"][winner]
             losing = item["items"][1-winner]
-            self.record_win(winning, losing)
+            self.record_win(winning, losing, decay)
 
     def from_history(self, history):
         keep = []
@@ -390,40 +386,54 @@ class Model:
         return ra, rb
         #return f"prob: {ra:.2f}, val: {self.model[a]:.4f}, new: {a_new}",f"prob: {rb:.2f}, val: {self.model[b]:.4f}, new: {b_new}"
 
+    def prepare_pairs(self, stats):
+        pairs = []
+        removeme = []
+        for x in self.all_items:
+            if self.is_dropped(stats, x)>1 and x in self.ids:
+                removeme.append(self.ids[x])
+        for idx in sorted(removeme)[::-1]:
+            del self.all_items[idx]
+            del self.model[idx]
+        self.ids = {x: idx for idx, x in enumerate(self.all_items)}
+
+        for pair, rel_wins in stats.pair_wins.items():
+            if pair in stats.incomparable_pairs: continue
+            ratio = (rel_wins[0] + 1) / (rel_wins[0] + rel_wins[1] + 2)
+            if (self.is_dropped(stats, pair[0])>1) or (self.is_dropped(stats, pair[1])>1):
+                continue
+            if pair in stats.too_close:
+                rel_wins = tuple([x + sum(rel_wins) + 3 * stats.too_close[pair] for x in rel_wins])
+            pairs.append((self.getid(pair[0]), self.getid(pair[1]), rel_wins[0]))
+            pairs.append((self.getid(pair[1]), self.getid(pair[0]), rel_wins[1]))
+        return pairs
+
+    def extend_model(self, stats):
+        if len(self.model) and len(self.all_items) > len(self.model):
+            newlen = len(self.all_items) - len(self.model)
+            #gp = choix.generate_params(newlen, 0.1)
+            #print(gp.shape)
+            newvals = []
+            for h in self.all_items[len(self.model):]:
+                dists, weights = self.calculate_dists(stats.comparisons.get(h, {}))
+                info = self.calc_next_index(h, dists, weights, {})[1]
+                newvals.append(info["mid"])
+            assert len(newvals) == newlen
+            self.model = numpy.concatenate((self.model, newvals))
 
     def calculate_ranking(self, stats, extra=False):
+        if len(stats.pair_wins) < 3:
+            return
         with timing("calculate_ranking"):
-            pairs = []
-            if len(stats.pair_wins) < 3:
-                return
-            if any((self.is_dropped(stats, x)>1) for x in self.all_items):
-                self.all_items = []
-                self.ids = {}
-                self.model = []
-
-            for pair, rel_wins in stats.pair_wins.items():
-                if pair in stats.incomparable_pairs: continue
-                ratio = (rel_wins[0] + 1) / (rel_wins[0] + rel_wins[1] + 2)
-                if (self.is_dropped(stats, pair[0])>1) or (self.is_dropped(stats, pair[1])>1):
-                    continue
-                if pair in stats.too_close:
-                    rel_wins = tuple([x + sum(rel_wins) + 3 * stats.too_close[pair] for x in rel_wins])
-                pairs.extend([(self.getid(pair[0]), self.getid(pair[1]))] * rel_wins[0])
-                pairs.extend([(self.getid(pair[1]), self.getid(pair[0]))] * rel_wins[1])
-            if len(self.model) and len(self.all_items) > len(self.model):
-                newlen = len(self.all_items) - len(self.model)
-                gp = choix.generate_params(newlen, 0.1)
-                #print(gp.shape)
-                self.model = numpy.concatenate((self.model, gp))
+            pairs = self.prepare_pairs(stats)
+            self.extend_model(stats)
             prev = None
             if len(self.model):
                 prev = numpy.array(self.model)
             start = time.time()
             print(f"ranking {len(self.all_items)} items...")
-            max_iter = 40
-            if extra:
-                max_iter = 10000
-            self.model, iters, e, t = ilsr_pairwise(len(self.all_items), pairs, alpha=0.0001, initial_params=self.model if len(self.model) else None, max_iter=max_iter)
+            max_iter = 20
+            self.model, iters, e, t = ilsr_pairwise(len(self.all_items), pairs, alpha=0.0001, params=self.model if len(self.model) else None, max_iter=max_iter, tol=1e-5)
             end = time.time()
             print(f"done ranking, took {end-start:0.3f}, {iters} iters, last update norm: {e} (/param = {t})")
             #print(self.clamp(self.model - prev))
@@ -436,7 +446,7 @@ class Model:
             return None
         return self.model[id]
 
-    def calc_next_index(self, h, vals, dists_out, debug=False, force=False):
+    def calc_next_index(self, h, vals, weights, dists_out, debug=False, force=False):
         modelmin = self.min()
         modelmax = self.max()
         low_, high_ = self.softmin(vals[0], inv=True), self.softmin(vals[1])
@@ -447,7 +457,7 @@ class Model:
         widx, lidx = self.getidx(low), self.getidx(high)
         mid = (low + high)/2
         midx = self.getidx(mid)
-        pos = (mid-modelmin)/(modelmax-modelmin)
+        pos = (high-modelmin)/(modelmax-modelmin)
         prec = opts.precision_func(pos)
         delta = len(self.model)/prec
         #if low < modelmin: widx -= max((delta - 2), 1)
@@ -474,6 +484,14 @@ class Model:
             return None,info
         return midx,info
 
+    def weighted_softmin(self, a, weights, inv=False):
+        a = numpy.array(a)
+        if inv: a=-a
+        sm = softmax(-numpy.array(a) * 4)
+        sm2 = sm * weights #numpy.exp(-b/1000)
+        av = numpy.average(a, weights=sm2)
+        return av
+
     def softmin(self, directional_distances, inv=False):
         if not len(directional_distances):
             return 100
@@ -498,23 +516,40 @@ class Model:
     # subject to seen-suppression of pool, of course
 
     def check_inversion(self, stats, pair):
-        rel_wins = stats.pair_wins.get(pair, [0, 0])
-        a = self.getid(pair[0])
-        b = self.getid(pair[1])
-        if a >= len(self.model) or b >= len(self.model):
+        if pair[0] not in self.sorted_ids or pair[1] not in self.sorted_ids:
             return 0.5, False
-        win_prob = choix.probabilities([a, b], self.model)[0]
-        win_ratio = (rel_wins[0]) / (rel_wins[0] + rel_wins[1])
-        if win_ratio < 0.5:
-            win_prob = 1-win_prob
-        inverted = win_prob < opts.inversion_threshold
+        valwin = self.getval(pair[0])
+        vallose = self.getval(pair[1])
+        rel_wins = stats.pair_wins.get(pair, [0, 0])
+        o = 0.1
+        win_ratio = (rel_wins[0]+o) / (rel_wins[0] + rel_wins[1] + o*2)
+        if rel_wins[0] < rel_wins[1]:
+            valwin, vallose = vallose, valwin
+            win_ratio = 1-win_ratio
+        if valwin > vallose:
+            return 101.0, False
         if sum(rel_wins) >= opts.inversion_max:
-            inverted = False # not the problem at this point
-        return win_prob, inverted
+            return 505, False
+        center = (valwin+vallose)/2
+        logit = abs(numpy.log(win_ratio/(1-win_ratio)))
+        distance = (valwin - center) * logit
+
+        idxlose, idxwin = self.getidx(center-distance), self.getidx(center+distance)
+
+        modelmin = self.min()
+        modelmax = self.max()
+        midx = self.getidx(center)
+        pos = (center-modelmin)/(modelmax-modelmin)
+        prec = opts.precision_func(pos)
+        delta = len(self.model)/prec
+        badly_inverted = max(0, idxlose - idxwin) >= delta*2
+        #print(f"idxlose: {idxlose}, idxwin: {idxwin}, prec: {prec}, delta*2: {delta*2}, vallose: {vallose}, valwin: {valwin}, center: {center}, logit: {logit}, badly_inverted: {badly_inverted}")
+        return 123, badly_inverted
 
     def calculate_nearest_neighborhood(self, stats, hashes_to_debug, extra=False, save=True):
         with timing("calculate_nearest_neighborhood"):
             distances = {h: ([-50],[50]) for h in self.all_items}
+            weights   = {h: ([1],[1]) for h in self.all_items}
             sp = {}
             if save: self.searching_pool=sp
 
@@ -547,6 +582,7 @@ class Model:
                     inversion_pool.add(pair[0])
                     inversion_pool.add(pair[1])
                     iv[pair] = ((win_ratio - win_prob) * 2)
+                decayed_ratio = (((rel_wins[0] + 1) / (rel_wins[0] + rel_wins[1] + 2)) - 0.5) * 2
 
                 if rel_wins[1] != 0:
                     # don't include ambiguous comparisons when tallying distances
@@ -558,11 +594,13 @@ class Model:
                 dist = wval - lval
                 distances[win][0].append(lval)
                 distances[loss][1].append(wval)
+                weights[win][0].append(decayed_ratio)
+                weights[loss][1].append(decayed_ratio)
             modelmin = self.min()
             modelmax = self.max()
             for h, vals in distances.items():
                 if self.is_dropped(stats, h): continue
-                nextidx, _ = self.calc_next_index(h, vals, dists)
+                nextidx, _ = self.calc_next_index(h, vals, weights.get(h), dists)
                 if nextidx is not None and h in self.bh2:
                     sp[h] = True
 
@@ -575,7 +613,7 @@ class Model:
                     #if not in_pool or in_inv_pool: continue
                     dists = distances[h]
                     win_inversions, loss_inversions = inversions.get(h, ([], []))
-                    wdist, ldist = self.softmin(dists[0]), self.softmin(dists[1])
+                    wdist, ldist = self.weighted_softmin(*dists[0]), self.weighted_softmin(*dists[1])
                     val = self.getval(h)
                     pos = (val-modelmin)/(modelmax-modelmin)
                     delta = int(len(self.model)/(opts.min_target_precision + (pos ** opts.target_precision_curve) * opts.target_precision_top))
@@ -741,9 +779,27 @@ class Model:
         self.update_new_pool()
     def __repr__(self):
         return f"Model(all_items={self.all_items}, model={self.model.tolist()}, searching_pool={self.searching_pool}, inversions={self.inversions})"
+    def calculate_dists(self, comparisons):
+        dists = ([-50], [50])
+        weights = ([1], [1])
+        for other_hash, wins in comparisons.items():
+            other_val = self.getval(other_hash)
+            if other_val is None: continue
+            if wins[0] > wins[1] and wins[1] == 0:
+                decayed_ratio = (((wins[0] + 1) / (wins[0] + wins[1] + 2)) - 0.5) * 2
+                dists[0].append(other_val)
+                weights[0].append(decayed_ratio)
+            elif wins[0] < wins[1] and wins[0] == 0:
+                decayed_ratio = (((wins[1] + 1) / (wins[0] + wins[1] + 2)) - 0.5) * 2
+                dists[1].append(other_val)
+                weights[1].append(decayed_ratio)
+            else:
+                continue
+        return dists, weights
 
 class State:
-    def __init__(self, files, tempdir):
+    def __init__(self, files, tempdir, update=True):
+        self.do_update = update
         self.files = files
         self.tempdir = tempdir
         self.subproc = None
@@ -856,7 +912,7 @@ class State:
 
         first = second = None
 
-        for x in range(40):
+        for x in range(800):
             first = firstlabel = None
             second = secondlabel = None
 
@@ -866,13 +922,13 @@ class State:
             print(f"randpool size: {len(randpool)}, inversions: {len(self.model_.inversions)}")
             prior = None
 
-            force = x > 30
-            force_neighborhood = x > 20
-            if x % 10 == 9:
+            force = x > 850
+            force_neighborhood = x > 400
+            if x % 50 == 49:
                 m = m * 0.5
                 bulk_seen = self.seen.bulk_check_seen(m)
                 print(f"decay bulk seen by {m}, new size {len(bulk_seen)}")
-            if opts.fix_inversions or x > 20:
+            if opts.fix_inversions or x > 700:
                 inversions = {x: y for x,y in self.model_.inversions.items() if x not in self.fixed_inversions}
             else:
                 inversions = {}
@@ -908,7 +964,7 @@ class State:
                 prior = self.model_.newp[firsth]
                 first = self.bh[firsth]
                 firstlabel = "explore"
-            elif random.randrange(0, len(randpool) + len(inversions)/opts.inversion_ratio) < len(randpool):
+            elif random.randrange(0, int(len(randpool) + len(inversions)/opts.inversion_ratio)) < len(randpool):
                 h = random.choice(randpool)
                 if h not in self.bh:
                     print("fail on missing randpool item")
@@ -917,13 +973,15 @@ class State:
                 firstlabel = f"randpool (lc: {self.stats.loss_counts.get(h)})"
             else:
                 for x in range(10):
-                    pair, prob = random.choice(list(inversions.items()))
-                    if random.random() < prob:
-                        break
+                    pair = random.choice(list(inversions.keys()))
                     if pair[0] in bulk_seen or pair[1] in bulk_seen:
+                        self.fixed_inversions.add(pair)
+                        continue
+                    if pair[0] not in self.bh or pair[1] not in self.bh:
                         continue
                     if not self.model_.check_inversion(self.stats, pair)[1]:
                         continue
+                    break
                 else:
                     print("pulled 10 items from inversions pool, all too close to bother with")
                     continue
@@ -942,17 +1000,8 @@ class State:
                     idx = self.model_.getidx(prior)
                 else:
                     comparisons = self.stats.comparisons.get(firsthash, {})
-                    dists = ([-50], [50])
-                    for other_hash, wins in comparisons.items():
-                        other_val = self.model_.getval(other_hash)
-                        if other_val is None: continue
-                        if wins[0] > wins[1] and wins[1] == 0:
-                            dists[0].append(other_val)
-                        elif wins[0] < wins[1] and wins[0] == 0:
-                            dists[1].append(other_val)
-                        else:
-                            continue
-                    idx, info = self.model_.calc_next_index(firsthash, dists, {}, debug=True, force=force_neighborhood)
+                    dists, weights = self.model_.calculate_dists(comparisons)
+                    idx, info = self.model_.calc_next_index(firsthash, dists, weights, {}, debug=True, force=force_neighborhood)
                     print("calc_next_index info:", firsthash, dists, info, idx, force_neighborhood)
                     if idx is None:
                         print(f"attempted neighborhood on {firsthash}, but next index None, marking done")
@@ -995,12 +1044,12 @@ class State:
                 if self.model_.is_dropped(self.stats, first["hash"]) or self.model_.is_dropped(self.stats, second["hash"]):
                     print("one of the options was dropped, resampling")
                     continue
-                if as_pair(first, second) in self.stats.incomparable_pairs:
-                    print("got an incomparable pair, resampling")
-                    continue
-                if as_pair(first,second) in self.stats.too_close:
-                    print("pair marked too close, resampling")
-                    continue
+            if as_pair(first, second) in self.stats.incomparable_pairs:
+                print("got an incomparable pair, resampling")
+                continue
+            if as_pair(first,second) in self.stats.too_close:
+                print("pair marked too close, resampling")
+                continue
             if first is None or second is None:
                 print("first or second is None", first, second)
                 continue
@@ -1029,11 +1078,12 @@ class State:
             self.extra_pool.add(b["hash"])
         sys.stdout.flush()
         self.current = a["hash"], b["hash"]
-        with open("preferences.json", "a") as appender:
-            appender.write(json.dumps({
-                "current": time.time(),
-                "items": [{"hash": a["hash"]}, {"hash": b["hash"]}],
-            }) + "\n")
+        if self.do_update:
+            with open("preferences.json", "a") as appender:
+                appender.write(json.dumps({
+                    "current": time.time(),
+                    "items": [{"hash": a["hash"]}, {"hash": b["hash"]}],
+                }) + "\n")
         return a, b, proba, probb
 
 
@@ -1118,6 +1168,7 @@ class State:
         return False
 
     def launch_slow(self, wait=False):
+        assert self.do_update
         packed_stats = self.stats.to_msgpack()
         packed_model = self.model_.to_msgpack(include_derived=False)
         self.read_needed = True
@@ -1132,6 +1183,7 @@ class State:
             self.reap_slow(True)
 
     def update(self, info, file1, file2):
+        assert self.do_update
         with open("preferences.json", "a") as appender:
             a = dict(info)
             a["items"] = [self.bh.get(file1, {"hash": file1}), self.bh.get(file2, {"hash": file2})]
