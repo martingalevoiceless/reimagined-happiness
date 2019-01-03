@@ -21,7 +21,7 @@ requires = [
 setup(
     name="app",
     install_requires=requires,
-    python_requires=">=3.7",
+    python_requires=">=3.6",
     packages=find_packages(exclude=["test*"]),
     entry_points="""\
         [paste.app_factory]

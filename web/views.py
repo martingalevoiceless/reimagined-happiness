@@ -79,7 +79,8 @@ def compare_put(request):
         path = request.matchdict["rest"]
         info = request.json_body
         if len(path) == 2:
-            request.state.update(info, path[0], path[1])
+            with timing("update"):
+                request.state.update(info, path[0], path[1])
         return compare_inner(request, path, True)
 
 

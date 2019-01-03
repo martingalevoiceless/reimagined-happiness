@@ -772,13 +772,14 @@ class Compare_ extends React.Component {
                         />
                     </View>
                 </File>}
+                
                 <View style={this.state.derp ? styles.compare_info_bottom : styles.compare_info_bottom2}>
                     <Button
                         onPress={() => this.request({prefer: 2})}
                         title="Prefer"
                         accessibilityLabel="Prefer"
                         />
-                </View>
+                        </View>
             </View>
         </View>;
     }

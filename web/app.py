@@ -14,11 +14,22 @@ def make_app(global_config, **kwargs):
         else:
             print("\033[31m Please edit pyramid.ini and set `base =` the path that you'd like. \033[m")
             import sys; sys.exit()
-        files = FilesCache(base)
-        state = State(files, tempdir)
-        state.read()
-        config.add_request_method(lambda a: files, "files", reify=True)
-        config.add_request_method(lambda a: state, "state", reify=True)
+        files = None
+        state = None
+        def get_files(a):
+            nonlocal files
+            if files is None:
+                files = FilesCache(base)
+            return files
+        def get_state(a):
+            nonlocal state
+            if state is None:
+                state = State("preferences.json", get_files(a), tempdir)
+                state.read()
+            return state
+        get_state(None)
+        config.add_request_method(get_files, "files", reify=True)
+        config.add_request_method(get_state, "state", reify=True)
         config.add_static_view(name="static", path='web:static/')
 
         config.add_route("api.files.all", "/api/allfiles/")
