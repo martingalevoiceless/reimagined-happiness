@@ -35,14 +35,13 @@ def nanguard(val, warning=None, default=0):
 
 class opts:
     minview = 900
-    loss_threshold = 0
-    explore_target = 10
-    max_shows = 5
-    neighborhood = 1
-    neighborhood_ratio = 0.7
+    explore_target = 2000
     high_quality_ratio = 0.0
+    neighborhood = 0.07
+    max_neighborhood = 1000
+    inversion_ratio = 1
 
-    min_clean_compares = 2
+    min_clean_compares = 1
     goat_window = 0.2
     @classmethod
     def precision_func(cls, x):
@@ -51,7 +50,7 @@ class opts:
         J = 6.0
         z = 2 ** 13
         j = 1+(J/z)
-        m = 4
+        m = 6
         return m+j**(z**x)-j
         #target_precision_curve = 40
         #target_precision_top = 20
@@ -59,16 +58,15 @@ class opts:
     drop_min = 7
     model_drop_min = 4
     max_delay = 10
-    inversion_threshold = 0.45
-    softmin_falloff_per_unit = 10.0
+    softmin_falloff_per_unit = 2.0
     inversion_neighborhood = 0.1
     inversion_max = 3
     seen_suppression_max = 24*5*60*60
-    seen_suppression_min = 60*60*24
+    seen_suppression_min = 60*60
     seen_suppression_rate = 4
-    fix_inversions = False
-    inversion_ratio = 100
-    too_close_boost = 2
+    fix_inversions = True
+    #inversion_ratio = 100
+    too_close_boost = 3
     initial_mag = 3
     min_mag = 0.3
 
@@ -114,7 +112,7 @@ class SeenPool:
         self.last_seen = {}
         self.seen_suppression = {}
 
-    def bulk_check_seen(self, stats, mult=1):
+    def bulk_check_seen(self, mult=1):
         with timing("bulk_check_seen"):
             # hooray! as of 3.7, dict preserves insertion order <3
             now = time.time()
@@ -141,7 +139,8 @@ class SeenPool:
             at = nanguard(at / 1000)
 
         ls = self.last_seen.get(h, at)
-        assert ls > nanguard(now / 10)
+        if ls <= nanguard(now / 10):
+            raise Exception()
         self.last_seen[h] = int(at)
         delta = nanguard(at - ls)
         if delta < 0: print(f"warning: delta not greater than zero: {delta} - {h}")
@@ -278,7 +277,8 @@ class Stats:
                 continue
             if "parent" in item:
                 path = "/" + item["parent"] + "/" + item["name"]
-                assert item["hash"] == hashlib.sha256(path.encode("utf-8", ue)).hexdigest()
+                if not (item["hash"] == hashlib.sha256(path.encode("utf-8", ue)).hexdigest()):
+                    raise Exception()
             item["dur"] = nanguard(item.get("viewend", 0), f"from_history#{idx}.viewend")-nanguard(item.get("viewstart", 0), f"from_history#{idx}.viewstart")
             if nanguard(item.get("dur",0))<opts.minview:
                 if not wts:
@@ -361,7 +361,8 @@ class Model:
         self.sorted_ids = {value: index for index, value in enumerate(self.sorted_hashes)}
 
     def add(self, x):
-        assert x not in self.ids
+        if x in self.ids:
+            raise Exception()
         self.ids[x] = len(self.all_items)
         self.all_items.append(x)
 
@@ -454,14 +455,15 @@ class Model:
                 dists, weights = self.calculate_dists(stats.comparisons.get(h, {}))
                 info = self.calc_next_index(h, dists, weights, {})[1]
                 newvals.append(nanguard(info["mid"]))
-            assert len(newvals) == newlen
+            if len(newvals) != newlen:
+                raise Exception()
             self.model = numpy.concatenate((self.model, newvals))
 
     def calculate_ranking(self, stats, extra=False):
         "calculate ranking. returns whether more is needed"
         if len(stats.pair_wins) < 3:
             return False
-        with timing("calculate_ranking"):
+        with timing("calculate_ranking", 0.1):
             pairs = self.prepare_pairs(stats)
             self.extend_model(stats)
             prev = None
@@ -505,7 +507,7 @@ class Model:
         #if low < modelmin: widx -= max((delta - 2), 1)
         #if high > modelmax: lidx += max((delta - 2), 1)
         #if debug: print(pos, delta, low, high, widx, lidx)
-        seen_enough = len(vals[0]) + len(vals[1]) > opts.min_clean_compares
+        seen_enough = len(vals[0]) > opts.min_clean_compares
         finished_enough = max(0, lidx - widx) < delta * 2
         is_goat = widx >= nanguard(modelmax - opts.goat_window)
         info = {
@@ -589,7 +591,7 @@ class Model:
         return 123, badly_inverted
 
     def calculate_nearest_neighborhood(self, stats, hashes_to_debug, extra=False, save=True):
-        with timing("calculate_nearest_neighborhood"):
+        with timing("calculate_nearest_neighborhood", 0.1):
             distances = {h: ([-50],[50]) for h in self.all_items}
             weights   = {h: ([1],[1]) for h in self.all_items}
             sp = {}
@@ -749,7 +751,7 @@ class Model:
             #print(f"min(model): {min(self.model)}, max(model): {max(self.model)}, mean(model): {numpy.mean(self.model)}")
             print(f"searching_pool: {len(sp)}, inversions: {len(iv)}")
     def update_new_pool(self, stats):
-        with timing("update_new_pool"):
+        with timing("update_new_pool", 0.1):
             af = self.af2
             bh = self.bh2
             ds={}
@@ -883,7 +885,7 @@ class State:
                 self.bh[h+colon+postfix] = f
         new = softmax([1] * len(self.af)) if len(af) else []
         newh = [x["hash"] for x in self.af]
-        if update:
+        if tempdir is not None:
             self.inputfile = os.path.join(self.tempdir, "input")
             self.outputfile = os.path.join(self.tempdir, "output")
             self.completionfile = os.path.join(self.tempdir, "completion")
@@ -941,7 +943,7 @@ class State:
             self.seen.mark_seen(i[0]["hash"], x["viewstart"])
             self.seen.mark_seen(i[1]["hash"], x["viewstart"])
         z = numpy.array(list(self.seen.seen_suppression.values()))
-        ss = self.seen.bulk_check_seen(self.stats)
+        ss = self.seen.bulk_check_seen()
         print(f"seen_suppression: mean={numpy.mean(z)}, max={numpy.max(z)}, min={numpy.min(z)}, median={numpy.median(z)}, seen={len(ss)}")
         print(f"history: {len(self.history)}")
         if self.do_reap:
@@ -958,8 +960,9 @@ class State:
             #print()
             #print(f"begin select_next.")
             m = 1
-            bulk_seen = self.seen.bulk_check_seen(self.stats, m)
-            bulk_seen_l = self.seen.bulk_check_seen(self.stats, m*0.3)
+            capped = self.stats.loss_counts.keys() | set([x for x, y in self.stats.win_counts.items() if y > 4])
+            bulk_seen = self.seen.bulk_check_seen(m) & capped
+            bulk_seen_l = self.seen.bulk_check_seen(m*0.3) & capped
             af, _ = self.files.get_all_images()
             print("s:", len(bulk_seen), "m:", len(self.model_.model), "np:", len(self.model_.newh),"ai:", len(self.model_.all_items), "af:", len(self.af2), "ic:", len(af), f"h: {len(self.history)}")
             last_winner = None
@@ -994,8 +997,8 @@ class State:
                         force_neighborhood = x > 400
                         if x % 50 == 49:
                             m = m * 0.5
-                            bulk_seen = self.seen.bulk_check_seen(m)
-                            bulk_seen_l = self.seen.bulk_check_seen(m*0.3)
+                            bulk_seen = self.seen.bulk_check_seen(m) & capped
+                            bulk_seen_l = self.seen.bulk_check_seen(m*0.3) & capped
                             print(f"decay bulk seen by {m}, new size {len(bulk_seen)}")
                         if opts.fix_inversions or x > 700:
                             inversions = {x: y for x,y in self.model_.inversions.items() if x not in self.fixed_inversions}
@@ -1083,7 +1086,7 @@ class State:
                             else:
                                 comparisons = self.stats.comparisons.get(firsthash, {})
                                 dists, weights = self.model_.calculate_dists(comparisons)
-                                idx, info = self.model_.calc_next_index(firsthash, dists, weights, {}, debug=True, force=force_neighborhood, dirty=firsthash in self.dirty)
+                                idx, info = self.model_.calc_next_index(firsthash, dists, weights, {}, debug=True, force=force_neighborhood, existing_val=self.model_.getval(firsthash) if firsthash not in self.dirty else None)
                                 #print("calc_next_index info:", firsthash, dists, info, idx, force_neighborhood)
                                 if idx is None:
                                     #print("done")
@@ -1091,22 +1094,26 @@ class State:
                                     self.removed_pool.add(firsthash)
                                     continue
                                     #idx = self.model_.sorted_ids[firsthash]
-                            nbs = max(3,int(numpy.random.lognormal(0, 1)*opts.neighborhood))
+                            nbs = max(opts.max_neighborhood,int(numpy.random.lognormal(0, 1)*opts.neighborhood*len(self.model_.model)))
                             #print("nbs", nbs)
 
                             zone=min(len(self.model_.sorted_hashes)-(1+nbs), max(nbs, idx))
-                            sss = (list(self.model_.sorted_hashes[zone-nbs:zone+nbs]))
+                            sss = (list(self.model_.sorted_hashes[max(0, zone-nbs):zone+nbs]))
                             if not len(sss):
                                 print("WARNING: fail on empty slice of sorted hashes")
                                 continue
                             for x in range(10):
-                                h = random.choice(sss)
+                                try:
+                                    h = random.choice(sss)
+                                except IndexError:
+                                    print(x, sss, firsthash, nbs, zone, len(self.model_.sorted_hashes), prior, self.model_.sorted_hashes[zone-nbs:zone+nbs], self.model_.sorted_hashes[:nbs])
+                                    raise
                                 if h == firsthash:
                                     continue
                                 if h not in bulk_seen_l:
                                     break
                                 nbs += 10*(x+1)
-                                sss = (list(self.model_.sorted_hashes[zone-nbs:zone+nbs]))
+                                sss = (list(self.model_.sorted_hashes[max(0, zone-nbs):zone+nbs]))
                             else:
                                 print("WARNING: fail on seen all of neighborhood too recently")
                                 continue
@@ -1142,7 +1149,7 @@ class State:
                             continue
                     break
                 else:
-                    assert False, f"Failed to find a pair. {len(self.history)}, {len(self.model_.model)}, {len(randpool)}, {len(self.model_.searching_pool)}, {last_winner}, {last_winner['hash'] in base_pool}"
+                    raise Exception(f"Failed to find a pair. {len(self.history)}, {len(self.model_.model)}, {len(randpool)}, {len(self.model_.searching_pool)}, {last_winner}, {last_winner['hash'] in base_pool}")
 
             with timing("after loop"):
                 proba, probb = self.getinfo(first, second, bulk_seen=bulk_seen)
@@ -1245,7 +1252,7 @@ class State:
             with timing("check_and_load"):
                 if os.path.exists(checkfile):
                     with timing("load"):
-                        if os.path.exists(self.readyfile):
+                        if os.path.exists(self.readyfile) and self.do_update:
                             os.unlink(self.readyfile)
                         # have one waiting to read
                         with timing("read"):
@@ -1266,7 +1273,8 @@ class State:
 
     def launch_slow(self, wait=False):
         with timing("launch_slow"):
-            assert self.do_update
+            if not self.do_update:
+                raise Exception()
             #with timing("to_msgpack (dicts)"):
             #    packed_stats = self.stats.to_msgpack()
             #    packed_model = self.model_.to_msgpack(include_derived=False)
@@ -1288,7 +1296,8 @@ class State:
 
     def update(self, info, file1, file2):
         with timing("update"):
-            assert self.do_update
+            if not self.do_update:
+                raise Exception
             with timing("save"):
                 with open(self.preffile, "a") as appender:
                     a = dict(info)

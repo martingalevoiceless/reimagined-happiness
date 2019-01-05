@@ -114,7 +114,7 @@ def ilsr_pairwise(n_items, data, alpha=0.0, params=None, max_iter=100, tol=1e-5)
         losers         = torch.tensor([x[1] for x in data], device=device)
         pairs          = winners * n_items + losers
     with timing("setup2"):
-        counts = nanguardt(torch.tensor([x[2] for x in data], dtype=torch.float32, device=device) + alpha, "counts")
+        counts = nanguardt(torch.tensor([x[2] for x in data], dtype=torch.float32, device=device), "counts")
         #counts /= torch.min(counts)
         diag_indices   = torch.arange(n_items, device=device) + torch.arange(n_items, device=device) * n_items
         if params is not None:
@@ -130,7 +130,7 @@ def ilsr_pairwise(n_items, data, alpha=0.0, params=None, max_iter=100, tol=1e-5)
                         weights = posguardt(exp_transform(params))
                 with timing("chain build"):
                     t_chain = torch.full((n_items, n_items), alpha, dtype=torch.float32, device=device)
-                    t_chain.view(-1).scatter_(0, pairs, nanguardt(counts * (1 / (weights[winners] + weights[losers])), "scatter"))
+                    t_chain.view(-1).scatter_add_(0, pairs, nanguardt(counts * (1 / (weights[winners] + weights[losers])), "scatter"))
                     t_chain.view(-1).scatter_add_(0, diag_indices, nanguardt(-torch.sum(t_chain, dim=0), "sum scatter"))
                 with timing("core"):
                     #print(alpha)

@@ -55,7 +55,7 @@ class FilesCache:
         loaded_results = None
         with timing("read allfiles"):
             try:
-                with open('/tmp/allfiles', 'r') as reader:
+                with open('allfiles', 'r') as reader:
                     loaded_results = json.loads(reader.read())
             except FileNotFoundError:
                 pass
@@ -77,7 +77,7 @@ class FilesCache:
         if cache:
             with timing("allfile_e_c read"):
                 try:
-                    with open('/tmp/allfiles_e_c'+self.vcode, 'r') as reader:
+                    with open('allfiles_e_c'+self.vcode, 'r') as reader:
                         self.entries = json.loads(reader.read())
                         self.entries_from_cache = True
                 except FileNotFoundError:
@@ -107,10 +107,10 @@ class FilesCache:
         if self.save:
             with timing("save allfiles_e_c"):
                 try:
-                    os.rename("/tmp/allfiles_e_c"+self.vcode, "/tmp/allfiles_e_c" + self.vcode + "." + str(int(time.time())))
+                    os.rename("allfiles_e_c"+self.vcode, "allfiles_e_c" + self.vcode + "." + str(int(time.time())))
                 except FileNotFoundError:
                     pass
-                with open("/tmp/allfiles_e_c"+self.vcode, "w")  as writer:
+                with open("allfiles_e_c"+self.vcode, "w")  as writer:
                     writer.write(json.dumps(self.entries))
         print("scan done")
         return self.entries
@@ -120,7 +120,7 @@ class FilesCache:
 
         if len(self.allfiles) == len(self.entries):
             return self.allfiles
-        print("loading file and magic data (this will take quite a while, but will be cached in /tmp)")
+        print("loading file and magic data (this will take quite a while, but will be cached)")
         with timing("get_allfiles"):
             out = self.allfiles
             self.results = {key: value for key, value in self.results.items() if self.check(key)}
@@ -158,10 +158,10 @@ class FilesCache:
             with timing("saving"):
                 print("saving, progress:", len(self.results), len(self.entries), 100 * len(self.results) / len(self.entries))
                 try:
-                    os.rename("/tmp/allfiles", "/tmp/allfiles." + str(int(time.time())))
+                    os.rename("allfiles", "allfiles." + str(int(time.time())))
                 except FileNotFoundError:
                     pass
-                with open("/tmp/allfiles", "w")  as writer:
+                with open("allfiles", "w")  as writer:
                     writer.write(json.dumps(self.results))
                 print("done")
                 sys.stdout.flush()
@@ -272,6 +272,17 @@ class FilesCache:
                     print("error getting video", e)
                     vinfo["video"] = None
                     vinfo["video_err"] = repr(e)
+                try:
+                    if result["magic"] != "video/webm":
+                        videoinfo = subprocess.check_output([
+                            "mp4info",
+                            joined,
+                        ])
+                        vinfo["mp4info"] = videoinfo.decode("utf-8", "backslashreplace")
+                except subprocess.CalledProcessError  as e:
+                    print("error getting video", e)
+                    vinfo["mp4info"] = None
+                    vinfo["mp4info_err"] = repr(e)
                 self.videos[result["hash"]] = vinfo
                 result.update(vinfo)
         except OSError as e:

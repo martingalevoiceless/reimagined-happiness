@@ -182,6 +182,12 @@ class FileEntry_ extends UtilComponent {
                     cellwidth={this.props.cellwidth}
                     big={false}
                 />
+                <View 
+                    style={styles.info_main}>
+                    {this.props.item.info && this.props.item.info.map((val, idx) => (
+                        <Text style={styles.textstyle} key={idx}>{val}</Text>
+                    ))}
+                </View>
             </Link>
         </View>
     }
