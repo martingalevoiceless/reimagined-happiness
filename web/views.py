@@ -70,7 +70,7 @@ def compare_get(request):
     with timing("compare_get"):
         path = request.matchdict["rest"]
         base = request.registry.settings["base"]
-        return compare_inner(request, path, False)
+        return compare_inner(request, path, False, {})
 
 
 @view_config(route_name='compare', request_method="PUT", renderer="json")
@@ -81,22 +81,23 @@ def compare_put(request):
         if len(path) == 2:
             with timing("update"):
                 request.state.update(info, path[0], path[1])
-        return compare_inner(request, path, True)
+        return compare_inner(request, path, True, info)
 
 
-def compare_inner(request, path, had_preference):
+def compare_inner(request, path, had_preference, info):
     with timing("compare_inner"):
-        if path and not had_preference and len(path) >= 2 and path[0] in request.state.bh and path[1] in request.state.bh:
+        if path and not had_preference and len(path) >= 2 and request.state.geth(path[0]) and request.state.geth(path[1]):
             #print(path)
             with timing("compare_inner::current"):
                 a_path, b_path = path[:2]
-                a = request.state.bh[a_path]
-                b = request.state.bh[b_path]
-                a, = rand_video_fragments(a, 1)
-                b, = rand_video_fragments(b, 1)
+                a = request.state.geth(a_path)
+                b = request.state.geth(b_path)
+                a, = rand_video_fragments(a, num_samples=1)
+                b, = rand_video_fragments(b, num_samples=1)
                 proba, probb = request.state.getinfo(a, b)
+            info = {"t": ["manual", "manual"], "i": [proba, probb]}
         else:
-            a, b, proba, probb = request.state.select_next(path)
+            a, b, proba, probb, info = request.state.select_next(path)
         a = dict(a)
         b = dict(b)
         a["info"] = proba
@@ -106,6 +107,7 @@ def compare_inner(request, path, had_preference):
             "item1": a,
             "item2": b,
             "path": a["hash"] + "/" + b["hash"],
+            "info": info,
             "replace": len(path) < 2
         }
 

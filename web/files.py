@@ -10,6 +10,7 @@ import time
 from .util import timing
 import json
 import magic
+import msgpack
 import os
 ue = "surrogatepass"
 
@@ -44,7 +45,7 @@ def extract_time(f, start, stop):
     return f
 
 class FilesCache:
-    def __init__(self, base, cache=True, save=True):
+    def __init__(self, base, cache=True, save=True, cache2=False):
         self.save = save
         self.base = base
         self.results = {}
@@ -53,6 +54,20 @@ class FilesCache:
         self.vcode="5"
         self.results_from_cache = False
         loaded_results = None
+        self.all_images = []
+        self.by_hash = {}
+
+        if cache2:
+            with timing("read images"):
+                try:
+                    with open("all_images.msgpack", "rb") as r:
+                        self.all_images = msgpack.unpack(r, raw=False, unicode_errors="surrogatepass")
+                    for x in self.all_images:
+                        self.by_hash[x["hash"]] = x
+                        for y in x.get("other_hashes", ()):
+                            self.by_hash[y] = x
+                except FileNotFoundError:
+                    pass
         with timing("read allfiles"):
             try:
                 with open('allfiles', 'r') as reader:
@@ -84,8 +99,6 @@ class FilesCache:
                     pass
 
         self.allfiles = []
-        self.all_images = []
-        self.by_hash = {}
         self.get_all_images()
 
     def check(self, key):
@@ -215,6 +228,9 @@ class FilesCache:
                 print(all_magics)
                 print("image count:")
                 print(len(self.all_images))
+                with timing("write all_images.msgpack"):
+                    with open("all_images.msgpack", "wb") as writer:
+                        msgpack.pack(self.all_images, writer, use_bin_type=True, unicode_errors="surrogatepass")
             return self.all_images, self.by_hash
 
     def get_stat(self, *path, children=False, quick=False):

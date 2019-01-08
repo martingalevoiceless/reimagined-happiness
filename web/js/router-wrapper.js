@@ -87,7 +87,7 @@ export function with_redirector(Component) {
             }
             return <React.Fragment>
                 {redirect}
-                <Component {...this.props} redirect={path => this.go(path)} location={this.props.location} match={this.props.match}/>
+                <Component {...this.props} redirect={(path, push=true) => this.go(path, push)} location={this.props.location} match={this.props.match}/>
             </React.Fragment>
         }
         static getDerivedStateFromProps(nextProps, prevState) {

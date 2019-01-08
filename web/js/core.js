@@ -369,7 +369,7 @@ function convert_jc(jc) {
     return c;
 }
 
-class Browser extends React.Component {
+class Browser_ extends React.Component {
     constructor(props) {
         super(props);
         var {height, width} = Dimensions.get('window');
@@ -506,16 +506,17 @@ class Browser extends React.Component {
     }
     render() {
         screen_key_callbacks = {};
-        //screen_key_callbacks['u'] = () => this.request({incomparable: true});
-        //screen_key_callbacks['i'] = () => this.request({prefer: 1});
-        //screen_key_callbacks['j'] = () => this.request({prefer: 2});
-        //screen_key_callbacks['Shift-I'] = () => this.props.redirect("/_/p" + (this.props.item1.path));
-        //screen_key_callbacks['Shift-J'] = () => this.props.redirect("/_/p" + (this.props.item2.path));
-        //screen_key_callbacks['Cmd-I'] = () => this.props.redirect("/_/compare/" + this.props.item.hash + "/");
-        //screen_key_callbacks['Cmd-J'] = () => this.props.redirect("/_/compare/" + this.props.item2.hash + "/");
+        screen_key_callbacks['n'] = () => this.props.redirect("/_/compare/");
+        screen_key_callbacks['j'] = (() => { if (this.state.prev && (this.state.prev.vpath||this.state.prev.path)) { this.props.redirect("/_/p" + (this.state.prev.vpath||this.state.prev.path))}});
+        screen_key_callbacks['i'] = () => this.props.redirect("/_/compare/" + this.state.item.hash + "/");
+        screen_key_callbacks['o'] = (() => { if (this.state.next && (this.state.next.vpath||this.state.next.path)) { this.props.redirect("/_/p" + (this.state.next.vpath||this.state.next.path))}});
+        screen_key_callbacks['p'] = () => this.props.redirect("/_/compare/");
 
-        //screen_key_callbacks['o'] = () => this.request({too_close: true});
-        //screen_key_callbacks['h'] = () => this.request({incomparable: true, goes_well: true});
+        //screen_key_callbacks['u'] = () => this.request({undo: true, fast: true});
+        //screen_key_callbacks[','] = () => this.request({incomparable: true, goes_well: true, fast: true});
+
+        screen_key_callbacks['['] = () => this.props.history.goBack();
+        screen_key_callbacks[']'] = () => this.props.history.goForward();
         screen_key_callbacks['Backspace'] = () => this.props.history.goBack();
         screen_key_callbacks['Shift-Backspace'] = () => this.props.history.goForward();
 
@@ -574,6 +575,7 @@ class Browser extends React.Component {
         </View>
     }
 }
+const Browser = with_redirector(Browser_);
 
 var screen_key_callbacks = {};
 keyboard(function (event) {
@@ -591,11 +593,12 @@ keyboard(function (event) {
         callback();
     }
 });
+var global_hor;
 
 class Compare_ extends React.Component {
     constructor(props) {
         super(props);
-        this.state = {info: false};
+        this.state = {info: false, hor: global_hor};
         this.geturl();
     }
     async geturl() {
@@ -629,6 +632,7 @@ class Compare_ extends React.Component {
                     extra = {headers: {"content-type": "application/json"}, "method": "PUT", "body": JSON.stringify({
                         viewstart: this.state.viewstart,
                         viewend: +(new Date()),
+                        info: this.state.info_,
                         hor: this.state.hor,
                         os: Platform.OS,
                         preference
@@ -652,6 +656,7 @@ class Compare_ extends React.Component {
                 viewstart: +(new Date()),
                 item1: convert_c(j.item1),
                 item2: convert_c(j.item2),
+                info_: j.info,
                 loading: false,
             };
             this.setState(values);
@@ -666,18 +671,32 @@ class Compare_ extends React.Component {
     }
     render() {
         screen_key_callbacks = {};
-        screen_key_callbacks['k'] = () => this.request({incomparable: true, fast: true});
-        screen_key_callbacks['o'] = () => this.request({prefer: 1, fast: true});
+        screen_key_callbacks['t'] = () => this.setState({hor: !this.state.hor}, () => {global_hor = this.state.hor});
+
+        screen_key_callbacks['m'] = () => this.props.redirect("/_/compare/" + this.state.item2.hash + "/");
+
+        screen_key_callbacks['h'] = () => this.request({prefer: 2, fast: true, strong: 1});
+        screen_key_callbacks['n'] = () => this.props.redirect("/_/p" + (this.state.item2.path));
         screen_key_callbacks['j'] = () => this.request({prefer: 2, fast: true});
-        screen_key_callbacks['t'] = () => this.setState({hor: !this.state.hor});
-        screen_key_callbacks['Meta-o'] = () => this.props.redirect("/_/p" + (this.state.item1.path));
-        screen_key_callbacks['Meta-j'] = () => this.props.redirect("/_/p" + (this.state.item2.path));
-        screen_key_callbacks['Shift-O'] = () => this.props.redirect("/_/compare/" + this.state.item1.hash + "/");
-        screen_key_callbacks['Shift-J'] = () => this.props.redirect("/_/compare/" + this.state.item2.hash + "/");
+
+        screen_key_callbacks['i'] = () => this.request({too_close: true, fast: true});
+
+        screen_key_callbacks['o'] = () => this.request({prefer: 1, fast: true});
+        screen_key_callbacks['p'] = () => this.props.redirect("/_/p" + (this.state.item1.path));
+        screen_key_callbacks['0'] = () => this.request({prefer: 1, fast: true, strong: 1});
+
+        screen_key_callbacks['l'] = () => this.props.redirect("/_/compare/" + this.state.item1.hash + "/");
+
+        screen_key_callbacks['Meta-j'] = () => this.request({lock: this.state.item2.hash});
+        screen_key_callbacks['Meta-i'] = () => this.request({lock: null});
+        screen_key_callbacks['Meta-o'] = () => this.request({lock: this.state.item1.hash});
 
         screen_key_callbacks['u'] = () => this.request({undo: true, fast: true});
-        screen_key_callbacks['i'] = () => this.request({too_close: true, fast: true});
+        screen_key_callbacks['k'] = () => this.request({incomparable: true, fast: true});
         screen_key_callbacks[','] = () => this.request({incomparable: true, goes_well: true, fast: true});
+
+        screen_key_callbacks['['] = () => this.props.history.goBack();
+        screen_key_callbacks[']'] = () => this.props.history.goForward();
         screen_key_callbacks['Backspace'] = () => this.props.history.goBack();
         screen_key_callbacks['Shift-Backspace'] = () => this.props.history.goForward();
 
