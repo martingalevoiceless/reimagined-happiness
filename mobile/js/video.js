@@ -50,10 +50,11 @@ class Video extends UtilComponent {
         setTimeout(() => {if(!this.dying){this.waiting = false; this.timejump()}}, 200);
 
     }
-    render({source, style, autoplay=true, short_controls=true, long_controls=false, onClick, pad=90, min_time, max_time}) {
+    render({source, style, autoplay=true, short_controls=true, long_controls=false, onClick, pad=90, min_time, max_time, autosize=true}) {
         return <Player
             playsInline
             style={StyleSheet.flatten([style, {height: '100%', width: '100%', overflow: 'hidden', display: 'inline-block'}])}
+            className={autosize ? "autosize" : ""}
             loop={true}
             fluid={false}
             muted

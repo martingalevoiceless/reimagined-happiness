@@ -5,7 +5,11 @@ import random
 import warnings
 
 from scipy import linalg
-from web.util import timing
+from web.util import nanguard
+import contextlib
+@contextlib.contextmanager
+def timing(name):
+    yield
 
 import torch
 
@@ -13,12 +17,14 @@ import torch
 SQRT2 = math.sqrt(2.0)
 SQRT2PI = math.sqrt(2.0 * math.pi)
 
-if torch.cuda.is_available():
-    device = torch.device('cuda')
-    with timing("start cuda"):
-        torch.zeros(1, device=device)
-else:
-    device = torch.device('cpu')
+def setup():
+    global device
+    if torch.cuda.is_available():
+        device = torch.device('cuda')
+        with timing("start cuda"):
+            torch.zeros(1, device=device)
+    else:
+        device = torch.device('cpu')
 
 def nanguardt(val, warning=None):
     #if not torch.isfinite(val).all():
@@ -35,20 +41,35 @@ class NormOfDifferenceTest:
         self._tol = tol
         self._ord = order
         self._prev_params = None
+        self._last_delta = None
+        self._last_delta2 = None
+        self.dist = None
+        self.delta = None
 
     def __call__(self, params, update=True):
+        self._prev_params2 = self._prev_params
         if self._prev_params is None:
             if update:
                 self._prev_params = nanguardt(params)
             return False
-        delta = self._prev_params - params
-        dist = nanguardt(torch.sum(torch.abs(delta)).cpu()).numpy()
+        delta = (self._prev_params - params).cpu().numpy()
+        mags = numpy.abs(delta)
+        dist = nanguard(numpy.sum(mags))
+        self._last_delta2 = self._last_delta
+        self._last_delta = self.delta
+        self.delta = delta
         self.dist = dist
+        delta_2step = nanguard(numpy.sum(numpy.abs(self._last_delta2 - delta))) if self._last_delta2 is not None else 0
+        delta_1step = nanguard(numpy.sum(numpy.abs(self._last_delta - delta))) if self._last_delta is not None else 0
+        largest = numpy.argsort(delta)
         if update:
             self._prev_params = params
-        sys.stdout.write(f"converged dist: {dist} /param: {dist/len(params)}                                 \r")
+        spaces = " " * 6
+        ups = ', '.join(f'{idx}={delta[idx]:0.3f}' for idx in largest[:-5:-1])
+        mag_std = numpy.std(mags)
+        sys.stdout.write(f"converged dist: {dist:0.4f}. /param: {dist/len(params):0.3e}. two step dist: {delta_2step:0.3f}, 1step: {delta_1step:0.3f}, mag std: {mag_std}. top updates: {ups}{spaces}\n")
         sys.stdout.flush()
-        return dist <= self._tol * len(params)
+        return dist <= self._tol * len(params) or (delta_2step < delta_1step / 2 and delta_2step > 0)
 
 def log_transform(weights):
     weights = torch.max(weights, torch.full((1,), 0.0001, device=device))
@@ -61,23 +82,27 @@ def exp_transform(params):
     weights = torch.exp(params - torch.mean(params))
     return (len(weights) / torch.sum(weights)) * weights
 
-def statdist(t_generator):
+def statdist(v):
+    v = v.pop()
     with timing("statdist"):
-        n = t_generator.shape[0]
-        nanguardt(t_generator, "t_generator")
+        n = v.shape[0]
+        nanguardt(v, "t_generator")
         with timing("statdist::lu_factor_torch"):
-            _, lu = torch.gesv(torch.ones([n, 1], dtype=torch.float32).to(device), t_generator)
-        nanguardt(lu, "lu")
+            _, v = torch.gesv(torch.ones([n, 1], dtype=torch.float32).to(device), v)
+            del _
+        nanguardt(v, "lu")
         # The last row contains 0's only.
         with timing("statdist::slices"):
-            left = lu[:-1,:-1]
-            right = -lu[:-1,-1]
+            left = v[:-1,:-1]
+            right = -v[:-1,-1]
+            del v
         # Solves system `left * x = right`. Assumes that `left` is
         # upper-triangular (ignores lower triangle).
         #print("left shape:", left.shape, "right shape:", right.shape)
         #with timing("statdist::pytorch readback 1"):
         with timing("pytorch version"):
             res, _ = torch.trtrs(right.reshape(right.shape+(-1,)), left)
+            del _
             nanguardt(res, "res")
             res = res.view(-1)
             res = torch.cat((res, torch.ones(1, device=device)))
@@ -139,6 +164,7 @@ def ilsr_pairwise(n_items, data, alpha=0.0, params=None, max_iter=100, tol=1e-5)
                     #if params is not None:
                     #    print("params[-1] = ", params[-1])
                     #print("weights[-1] = ", weights[-1])
+                    t_chain = [t_chain]
                     params = nanguardt(log_transform(statdist(t_chain)))
                 with timing("converged"):
                     if converged(params):

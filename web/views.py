@@ -10,7 +10,7 @@ import random
 from pyramid.view import view_config
 
 from .util import timing
-from .state import rand_video_fragments
+from .state_ import rand_video_fragments
 #todo: view sort page for specific image
 #todo: directory priors in tree
 
@@ -64,12 +64,105 @@ def allfiles_endpoint(request):
     af = request.files.get_allfiles()
     return af
 
+@view_config(route_name='history', request_method="GET", renderer="json")
+def history_get(request):
+    with timing("history_get"):
+        ref = request.matchdict["hash"]
+        #af, bh = request.files.get_all_images()
+        bh = request.state.bh
+        children = {}
+        r = dict(bh[ref])
+        r["info"] = request.state.getinfo(r["hash"], debugpools=False, details=True, do_seen=False)[0]
+        for idx, p in enumerate(request.state.stats.comparisons.get(ref, {}).items()):
+            h, v = p
+            if h in bh:
+            #if request.state.model_.is_dropped(request.state.stats, h): continue
+                d = dict(bh[h])
+                d["path"] = "/" + d["parent"] + "/" + d["name"]
+                del d["parent"]
+            else:
+                d = {
+                    "size": 0,
+                    "dir": False,
+                    "mtime": time.time(),
+                    "ctime": time.time(),
+                    "magic": "missing",
+                    "hash": h,
+                    "path": "/",
+                    "name": "unknown",
+                }
+            d["name"] = f"{idx:010d}." + d["name"].rpartition(".")[-1]
+            d["info"] = request.state.getinfo(d["hash"], ref, debugpools=False, details=False, do_seen=False)[0][::-1]
+            d["ratio"] = v[1] / (v[1] + v[0])
+            children[d["name"]] = d
+        res = {
+            "size": 0,
+            "dir": True,
+            "mtime": time.time(),
+            "ctime": time.time(),
+            "name": "_sorted",
+            "path": "/_sorted",
+            "children": children
+        }
+        return {
+            "ref": r,
+            "history": res
+        }
+
+@view_config(route_name='similarity', request_method="GET", renderer="json")
+def similarity_get(request):
+    with timing("similarity_get"):
+        path = request.matchdict["rest"]
+        return similarity_inner(request, path, False, {})
+
+
+@view_config(route_name='similarity', request_method="PUT", renderer="json")
+def similarity_put(request):
+    with timing("similarity_put"):
+        path = request.matchdict["rest"]
+        info = request.json_body
+        if len(path) == 3:
+            with timing("update"):
+                request.state.update(info, path[0], path[1], path[2])
+        return compare_inner(request, path, True, info)
+
+
+def similarity_inner(request, path, had_preference, info):
+    with timing("compare_inner"):
+        if path and not had_preference and len(path) >= 2 and request.state.geth(path[0]) and request.state.geth(path[1]):
+            #print(path)
+            with timing("similarity_inner::current"):
+                a_path, b_path, c_path = path[:3]
+                a = request.state.geth(a_path)
+                b = request.state.geth(b_path)
+                c = request.state.geth(b_path)
+                a, = rand_video_fragments(a, num_samples=1)
+                b, = rand_video_fragments(b, num_samples=1)
+                c, = rand_video_fragments(c, num_samples=1)
+                proba, probb, proc = request.state.getinfo(a, b, c)
+            info = {"t": ["manual", "manual", "manual"], "i": [proba, probb, probc]}
+        else:
+            a, b, c, proba, probb, probc, info = request.state.select_next_similarity(path)
+        a = dict(a)
+        b = dict(b)
+        c = dict(c)
+        a["info"] = proba
+        b["info"] = probb
+        c["info"] = probc
+
+        return {
+            "item1": a,
+            "item2": b,
+            "item3": c,
+            "path": a["hash"] + "/" + b["hash"] + "/" + c["hash"],
+            "info": info,
+            "replace": len(path) < 3
+        }
 
 @view_config(route_name='compare', request_method="GET", renderer="json")
 def compare_get(request):
     with timing("compare_get"):
         path = request.matchdict["rest"]
-        base = request.registry.settings["base"]
         return compare_inner(request, path, False, {})
 
 
@@ -156,6 +249,10 @@ def get_path(request):
     res = dict(res)
     if "hash" in res:
         res["info"], = request.state.getinfo(res["hash"])
+    if "children" in res:
+        for child in res["children"].values():
+            if "hash" in child:
+                child["info"], = request.state.getinfo(child["hash"], pools=False)
     return res
 
 

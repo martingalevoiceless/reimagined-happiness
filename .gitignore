@@ -26,3 +26,9 @@ htmlcov
 duplicates.csv
 pyramid.ini
 .pyenv
+*.mp4
+*.ipynb
+ml/
+ffmpeg/
+*.msgpack
+cuda_*

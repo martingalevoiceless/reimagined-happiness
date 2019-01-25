@@ -147,6 +147,7 @@ const Content = ({item, style, cellwidth, imgurl, onClick, big, in_compare}) => 
             />;
     } else if (item.magic === "video/mp4" || item.magic === "video/x-flv" || item.magic == "video/webm" || item.magic == "video/x-m4v" || item.magic == "video/quicktime") {
         return <Video
+            autosize={big}
             style={style}
             source={src}
             onClick={onClick}
@@ -167,14 +168,11 @@ const Content = ({item, style, cellwidth, imgurl, onClick, big, in_compare}) => 
 class FileEntry_ extends UtilComponent {
     constructor(props) {
         super(props);
-        this.state = {
-            info: false
-        };
     }
     render() {
         var hw = {height: this.props.cellwidth, maxWidth: this.props.cellwidth};
         return <View style={[styles.fileentry, hw]}>
-            <Link to={"/_/p" + (this.props.item.vpath || this.props.item.path)}>
+            <Link to={this.props.nextpath || ("/_/p" + (this.props.item.vpath || this.props.item.path))}>
                 <Content
                     style={[styles.fileentry_content, hw]}
                     item={this.props.item}
@@ -182,12 +180,14 @@ class FileEntry_ extends UtilComponent {
                     cellwidth={this.props.cellwidth}
                     big={false}
                 />
-                <View 
-                    style={styles.info_main}>
-                    {this.props.item.info && this.props.item.info.map((val, idx) => (
-                        <Text style={styles.textstyle} key={idx}>{val}</Text>
-                    ))}
-                </View>
+                {this.props.info &&
+                    <View 
+                        style={styles.info_small}>
+                        {this.props.item.info && this.props.item.info.map((val, idx) => (
+                            <Text style={this.props.smallinfo ? styles.textstyle_small : styles.textstyle} key={idx}>{val}</Text>
+                        ))}
+                    </View>
+                }
             </Link>
         </View>
     }
@@ -303,6 +303,8 @@ class Directory_ extends UtilComponent {
                 renderItem={({item}) => <FileEntry
                     imgurl={this.props.imgurl}
                     item={item}
+                    smallinfo={true}
+                    info={this.props.info}
                     cellwidth={width/cols}
                 />}
                 numColumns={cols}
@@ -354,7 +356,7 @@ function convert_c(cc) {
         ...cc
     }
 }
-function convert_jc(jc) {
+function convert_jc(jc, sortkey=(x => [!(x.dir), x.name])) {
     var c = [];
     if (jc) {
         for (var child in jc) {
@@ -365,7 +367,7 @@ function convert_jc(jc) {
             c.push(cc);
         }
     }
-    sortby(c, x => [!(x.dir), x.name]);
+    sortby(c, sortkey);
     return c;
 }
 
@@ -506,6 +508,7 @@ class Browser_ extends React.Component {
     }
     render() {
         screen_key_callbacks = {};
+        screen_key_callbacks['d'] = () => this.setState({info: !this.state.info, children: this.state.children.slice()});
         screen_key_callbacks['n'] = () => this.props.redirect("/_/compare/");
         screen_key_callbacks['j'] = (() => { if (this.state.prev && (this.state.prev.vpath||this.state.prev.path)) { this.props.redirect("/_/p" + (this.state.prev.vpath||this.state.prev.path))}});
         screen_key_callbacks['i'] = () => this.props.redirect("/_/compare/" + this.state.item.hash + "/");
@@ -672,15 +675,20 @@ class Compare_ extends React.Component {
     render() {
         screen_key_callbacks = {};
         screen_key_callbacks['t'] = () => this.setState({hor: !this.state.hor}, () => {global_hor = this.state.hor});
+        screen_key_callbacks['d'] = () => this.setState({info: !this.state.info});
+        //screen_key_callbacks['Shift-B'] = () => this.setState({info: !this.state.info});
 
         screen_key_callbacks['m'] = () => this.props.redirect("/_/compare/" + this.state.item2.hash + "/");
 
         screen_key_callbacks['h'] = () => this.request({prefer: 2, fast: true, strong: 1});
         screen_key_callbacks['n'] = () => this.props.redirect("/_/p" + (this.state.item2.path));
         screen_key_callbacks['j'] = () => this.request({prefer: 2, fast: true});
+        screen_key_callbacks['Shift-J'] = () => this.props.redirect("/_/history/" + this.state.item2.hash);
 
         screen_key_callbacks['i'] = () => this.request({too_close: true, fast: true});
+        screen_key_callbacks['8'] = () => this.request({not_sure: true, fast: true});
 
+        screen_key_callbacks['Shift-O'] = () => this.props.redirect("/_/history/" + this.state.item1.hash);
         screen_key_callbacks['o'] = () => this.request({prefer: 1, fast: true});
         screen_key_callbacks['p'] = () => this.props.redirect("/_/p" + (this.state.item1.path));
         screen_key_callbacks['0'] = () => this.request({prefer: 1, fast: true, strong: 1});
@@ -811,6 +819,408 @@ class Compare_ extends React.Component {
 }
 const Compare = with_redirector(Compare_);
 
+class Similarity_ extends React.Component {
+    constructor(props) {
+        super(props);
+        this.state = {info: false, hor: global_hor};
+        this.geturl();
+    }
+    async geturl() {
+        var url = await imgurl("", true);
+        this.setState({imgurl: url});
+    }
+    componentDidMount() {
+        this.request();
+    }
+    rest(props) {
+        if (props === undefined) {
+            props = this.props;
+        }
+        return (props.match.params.rest || "")
+    }
+    componentDidUpdate(prevprops) {
+        if (this.rest() !== this.rest(prevprops) && !this.state.loading && this.rest() !== this.state.loadedpath) {
+            this.request();
+        }
+    }
+    async request(similarity) {
+        try {
+            this.setState({loading: true});
+            var path = this.rest();
+            var j;
+            if (false && comparecache[path] !== undefined && similarity === undefined) {
+                j = comparecache[path];
+            } else {
+                var extra = {};
+                if (similarity !== undefined) {
+                    extra = {headers: {"content-type": "application/json"}, "method": "PUT", "body": JSON.stringify({
+                        viewstart: this.state.viewstart,
+                        viewend: +(new Date()),
+                        info: this.state.info_,
+                        hor: this.state.hor,
+                        os: Platform.OS,
+                        similarity
+                    })};
+                }
+                var resp = await fetchpath("/api/compare/" + path, extra);
+                j = await resp.json();
+                comparecache[j.path] = j;
+            }
+            if (path !== this.rest()) {
+                return;
+            }
+            this.setState({derp: !this.state.derp});
+            if (j.path && j.path !== this.rest()) {
+                console.log(j.path, this.rest(), "redirect");
+                this.props.redirect("/_/similarity/" + j.path, !(j.replace));
+            }
+            var values = {
+                j: JSON.stringify(j),
+                loadedpath: j.path,
+                viewstart: +(new Date()),
+                item1: convert_c(j.item1),
+                item2: convert_c(j.item2),
+                item3: convert_c(j.item3),
+                info_: j.info,
+                loading: false,
+            };
+            this.setState(values);
+        } catch (e) {
+            console.warn(e);
+            if (e.status == 401) {
+                this.props.redirect("/_/settings/");
+            } else {
+                throw e;
+            }
+        }
+    }
+    render() {
+        screen_key_callbacks = {};
+        screen_key_callbacks['t'] = () => this.setState({hor: !this.state.hor}, () => {global_hor = this.state.hor});
+        screen_key_callbacks['d'] = () => this.setState({info: !this.state.info});
+        //screen_key_callbacks['Shift-B'] = () => this.setState({info: !this.state.info});
+
+        //screen_key_callbacks['m'] = () => this.props.redirect("/_/compare/" + this.state.item2.hash + "/");
+
+        //screen_key_callbacks['h'] = () => this.request({prefer: 2, fast: true, strong: 1});
+        //screen_key_callbacks['n'] = () => this.props.redirect("/_/p" + (this.state.item2.path));
+        screen_key_callbacks['j'] = () => this.request({most_similar: [0,1], fast: true});
+        //screen_key_callbacks['Shift-J'] = () => this.props.redirect("/_/history/" + this.state.item2.hash);
+
+        screen_key_callbacks['i'] = () => this.request({too_close: true, fast: true});
+        screen_key_callbacks['8'] = () => this.request({not_sure: true, fast: true});
+
+        //screen_key_callbacks['Shift-O'] = () => this.props.redirect("/_/history/" + this.state.item1.hash);
+        screen_key_callbacks['o'] = () => this.request({most_similar: [1,2], fast: true});
+        //screen_key_callbacks['p'] = () => this.props.redirect("/_/p" + (this.state.item1.path));
+        //screen_key_callbacks['0'] = () => this.request({prefer: 1, fast: true, strong: 1});
+
+        //screen_key_callbacks['l'] = () => this.props.redirect("/_/compare/" + this.state.item1.hash + "/");
+
+        //screen_key_callbacks['Meta-j'] = () => this.request({lock: this.state.item2.hash});
+        //screen_key_callbacks['Meta-i'] = () => this.request({lock: null});
+        //screen_key_callbacks['Meta-o'] = () => this.request({lock: this.state.item1.hash});
+
+        //screen_key_callbacks['u'] = () => this.request({undo: true, fast: true});
+        screen_key_callbacks['k'] = () => this.request({most_similar: [0,2], fast: true});
+        //screen_key_callbacks[','] = () => this.request({incomparable: true, goes_well: true, fast: true});
+
+        screen_key_callbacks['['] = () => this.props.history.goBack();
+        screen_key_callbacks[']'] = () => this.props.history.goForward();
+        screen_key_callbacks['Backspace'] = () => this.props.history.goBack();
+        screen_key_callbacks['Shift-Backspace'] = () => this.props.history.goForward();
+
+        var dir = {
+            browser: styles.browser,
+            compare_pane: styles.compare_pane,
+            compare_buttons: styles.compare_buttons,
+            too_close: "Too Close",
+            incomparable:"Incomparable",
+            goes: "Goes Well",
+            undo: "Undo",
+            transpose: "Transpose"
+        };
+        if (this.state.hor) {
+            dir = {
+                browser: styles.browser_hor,
+                compare_pane: styles.compare_pane_hor,
+                compare_buttons: styles.compare_buttons_hor,
+                too_close: "==",
+                incomparable:"!=",
+                goes: "+=",
+                undo: "U",
+                transpose: "T",
+            };
+        }
+        return <View style={dir.browser}>
+            <View style={dir.compare_pane}>
+                {this.state.item1 && 
+                <File
+                    in_compare={true}
+                    imgurl={this.state.imgurl}
+                    item={this.state.item1}
+                    next={this.state.item1}
+                    cols={1}
+                    info_top={true}
+                    info={this.state.info}
+                    setinfo={info => this.setState({info})}
+                >
+                    <View style={styles.blklst}>
+                    <Button
+                        onPress={() => this.request({dislike: [1,0,0]})}
+                        title="blklst"
+                        color="#be3e2e"
+                        accessibilityLabel="blklst"
+                        />
+                    </View>
+                </File>}
+                <View style={this.state.derp ? styles.compare_info_top : styles.compare_info_top2}>
+                    <Button
+                        onPress={() => this.request({most_similar: [0, 1]})}
+                        title="closer"
+                        accessibilityLabel="closer"
+                        />
+                </View>
+            </View>
+            <View style={dir.compare_pane}>
+                {this.state.item1 && 
+                <File
+                    in_compare={true}
+                    imgurl={this.state.imgurl}
+                    item={this.state.item1}
+                    next={this.state.item1}
+                    cols={1}
+                    info_top={true}
+                    info={this.state.info}
+                    setinfo={info => this.setState({info})}
+                >
+                    <View style={styles.blklst}>
+                    <Button
+                        onPress={() => this.request({dislike: [1,0,0]})}
+                        title="blklst"
+                        color="#be3e2e"
+                        accessibilityLabel="blklst"
+                        />
+                    </View>
+                </File>}
+                <View style={this.state.derp ? styles.compare_info_top : styles.compare_info_top2}>
+                    <Button
+                        onPress={() => this.request({most_similar: [0, 1]})}
+                        title=". closer >"
+                        accessibilityLabel="closer"
+                        />
+                </View>
+            </View>
+            {/*<View style={dir.compare_buttons}>
+                <Button
+                    onPress={() => this.request({too_close: true})}
+                    title={dir.too_close}
+                    accessibilityLabel="Too close to call"
+                    />
+                <Button
+                    onPress={() => this.request({incomparable: true})}
+                    title={dir.incomparable}
+                    accessibilityLabel="Doesn't make sense to compare"
+                    />
+                <Button
+                    onPress={() => this.request({incomparable: true, goes_well: true})}
+                    title={dir.goes}
+                    />
+                <Button
+                    onPress={() => this.request({undo: true})}
+                    title={dir.undo}
+                    />
+                <Button
+                    onPress={() => this.setState({hor: !this.state.hor})}
+                    title={dir.transpose}
+                    />
+            </View>*/}
+            <View style={styles.compare_pane}>
+                {this.state.item2 && 
+                <File
+                    in_compare={true}
+                    imgurl={this.state.imgurl}
+                    item={this.state.item2}
+                    next={this.state.item2}
+                    cols={1}
+                    info={this.state.info}
+                    setinfo={info => this.setState({info})}
+                >
+                    <View style={styles.blklst}>
+                    <Button
+                        onPress={() => this.request({dislike: [0,1,0]})}
+                        title="blklst"
+                        style={styles.blklst}
+                        color="#be3e2e"
+                        accessibilityLabel="blklst"
+                        />
+                    </View>
+                </File>}
+                
+                <View style={this.state.derp ? styles.compare_info_bottom : styles.compare_info_bottom2}>
+                    <Button
+                        onPress={() => this.request({most_similar: [0,2]})}
+                        title="< closer >"
+                        accessibilityLabel="< closer >"
+                        />
+                        </View>
+            </View>
+        </View>;
+    }
+}
+const Similarity = with_redirector(Similarity_);
+
+class History_ extends React.Component {
+    constructor(props) {
+        super(props);
+        var {height, width} = Dimensions.get('window');
+        this.state = {
+            col_width: width / Math.round(width/512),
+            imgurl: undefined,
+            info: true,
+            children: [],
+            hor: global_hor,
+        };
+        this.geturl();
+    }
+    async geturl() {
+        var url = await imgurl("", true);
+        this.setState({imgurl: url});
+    }
+    componentDidMount() {
+        this.request();
+    }
+    async request() {
+        try {
+            this.setState({loading: true});
+            var path = this.rest();
+            var resp = await fetchpath("/api/history/" + encodeURIComponent(path));
+            var j = await resp.json();
+            if (path !== this.rest()) {
+                return;
+            }
+            var jc = j.history.children;
+            var c = convert_jc(jc, x => -x.ratio);
+            var values = {
+                item: j.ref,
+                children: c,
+                loaded: path,
+                loading: false,
+            };
+            this.setState(values);
+        } catch (e) {
+            console.warn(e);
+            if (e.status == 401) {
+                this.props.redirect("/_/settings/");
+            } else {
+                throw e;
+            }
+        }
+    }
+    rest(props) {
+        if (props === undefined) {
+            props = this.props;
+        }
+        return (props.match.params.rest || "")
+    }
+    componentDidUpdate(prevProps, prevState, snapshot) {
+        if (this.rest(prevProps) !== this.rest()) {
+            this.request();
+        }
+    }
+    render() {
+        screen_key_callbacks = {};
+        screen_key_callbacks['t'] = () => this.setState({hor: !this.state.hor}, () => {global_hor = this.state.hor});
+        screen_key_callbacks['d'] = () => this.setState({info: !this.state.info, children: this.state.children.slice()});
+        //screen_key_callbacks['i'] = () => this.props.history.goBack();
+        screen_key_callbacks['i'] = () => this.props.redirect("/_/compare/");
+        //screen_key_callbacks['n'] = () => this.props.redirect("/_/compare/");
+        //screen_key_callbacks['j'] = (() => { if (this.state.prev && (this.state.prev.vpath||this.state.prev.path)) { this.props.redirect("/_/p" + (this.state.prev.vpath||this.state.prev.path))}});
+        //screen_key_callbacks['i'] = () => this.props.redirect("/_/compare/" + this.state.item.hash + "/");
+        //screen_key_callbacks['o'] = (() => { if (this.state.next && (this.state.next.vpath||this.state.next.path)) { this.props.redirect("/_/p" + (this.state.next.vpath||this.state.next.path))}});
+        //screen_key_callbacks['p'] = () => this.props.redirect("/_/compare/");
+
+        //screen_key_callbacks['u'] = () => this.request({undo: true, fast: true});
+        //screen_key_callbacks[','] = () => this.request({incomparable: true, goes_well: true, fast: true});
+
+        screen_key_callbacks['['] = () => this.props.history.goBack();
+        screen_key_callbacks[']'] = () => this.props.history.goForward();
+        screen_key_callbacks['Backspace'] = () => this.props.history.goBack();
+        screen_key_callbacks['Shift-Backspace'] = () => this.props.history.goForward();
+
+        var {height, width} = Dimensions.get('window');
+        var ww = width/this.state.col_width;
+        var cols = Math.round(ww);
+        var icols = cols;
+        if (!isFinite(cols) || cols == 0) {
+            cols = 1;
+            
+        }
+        if (cols > 8) { cols = 6; }
+
+        var dir = {
+            browser: styles.browser,
+            compare_pane: styles.compare_pane,
+            compare_buttons: styles.compare_buttons,
+            too_close: "Too Close",
+            incomparable:"Incomparable",
+            goes: "Goes Well",
+            undo: "Undo",
+            transpose: "Transpose"
+        };
+        if (this.state.hor) {
+            dir = {
+                browser: styles.browser_hor,
+                compare_pane: styles.compare_pane_hor,
+                compare_buttons: styles.compare_buttons_hor,
+                too_close: "==",
+                incomparable:"!=",
+                goes: "+=",
+                undo: "U",
+                transpose: "T",
+            };
+        }
+        //<Text>cols: {cols}, height: {height}, width: {width}, cw: {this.state.col_width}, ww: {ww}, rww:  icols: {icols}</Text>
+        return <View style={dir.browser}>
+            <View style={dir.compare_pane}>
+                {!this.state.loading && this.state.children &&
+                    <View style={styles.directory}>
+                        <FlatList
+                            windowSize={2}
+                            initialNumToRender={4}
+                            key={"" + cols}
+                            data={this.state.children}
+                            style={styles.browserlist}
+                            renderItem={({item}) => <FileEntry
+                                imgurl={this.state.imgurl}
+                                item={item}
+                                info={this.state.info}
+                                smallinfo={false}
+                                nextpath={"/_/compare/" + this.state.item.hash + "/" + item.hash}
+                                cellwidth={width/cols}
+                            />}
+                            numColumns={cols}
+                            />
+                    </View>
+                }
+            </View>
+            <View style={dir.compare_pane}>
+                {this.state.item && 
+                <File
+                    in_compare={true}
+                    imgurl={this.state.imgurl}
+                    item={this.state.item}
+                    next={this.state.item}
+                    cols={1}
+                    info={this.state.info}
+                    setinfo={info => this.setState({info})}
+                >
+                </File>}
+            </View>
+        </View>
+    }
+}
+const History = with_redirector(History_);
 
 const App = () => (
     <View style={styles.container}>
@@ -818,6 +1228,7 @@ const App = () => (
             <Route exact path="/" component={Home}/>
             <Route exact path="/_/settings/" component={Settings}/>
             <Route sensitive path="/_/compare/:rest*" component={Compare}/>
+            <Route sensitive path="/_/history/:rest*" component={History}/>
             <Route sensitive path="/_/p/:rest*" component={Browser}/>
         </Router>
     </View>
@@ -856,11 +1267,9 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     browser: {
-        paddingTop: 25,
         flex: 1,
     },
     browser_hor: {
-        paddingTop: 25,
         flex: 1,
         flexDirection: 'row-reverse',
     },
@@ -943,6 +1352,15 @@ const styles = StyleSheet.create({
         flexDirection: "column-reverse",
         justifyContent: "space-between",
     },
+    info_small: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        backgroundColor: 'rgba(52, 52, 52, 0.3)',
+        flexDirection: "column",
+        flexGrow: 1,
+        padding: 5,
+    },
     info_main: {
         backgroundColor: 'rgba(52, 52, 52, 0.3)',
         flexDirection: "column",
@@ -1000,6 +1418,10 @@ const styles = StyleSheet.create({
     },
     textstyle: {
         color: '#ffffff',
+    },
+    textstyle_small: {
+        color: '#ffffff',
+        fontSize: 10,
     },
     singlefile_content: {
         flex: 1,

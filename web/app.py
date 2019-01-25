@@ -1,7 +1,7 @@
 from waitress import serve
 from pyramid.config import Configurator
 from .files import FilesCache
-from .state import State
+from .state import State, reload_all
 from .util import timing
 
 def make_app(global_config, **kwargs):
@@ -25,6 +25,7 @@ def make_app(global_config, **kwargs):
                 return files
             def get_state(a):
                 nonlocal state
+                reload_all()
                 if state is None:
                     state = State("preferences.json", get_files(a), tempdir)
                     state.read()
@@ -36,8 +37,9 @@ def make_app(global_config, **kwargs):
 
             config.add_route("api.files.all", "/api/allfiles/")
 
-            #config.add_route("exemplar", "/api/exemplar/*rest")
+            config.add_route("similarity", "/api/similarity/*rest")
             config.add_route("compare", "/api/compare/*rest")
+            config.add_route("history", "/api/history/{hash}")
             config.add_route("fileinfo", "/api/fileinfo/*rest")
 
             config.add_route("app1", "/_/*rest")
