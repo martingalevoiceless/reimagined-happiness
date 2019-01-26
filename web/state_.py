@@ -104,7 +104,7 @@ def read(self):
     ss = self.seen.bulk_check_seen()
     print(f"seen_suppression: mean={numpy.mean(z)}, max={numpy.max(z)}, min={numpy.min(z)}, median={numpy.median(z)}, seen={len(ss)}")
     print(f"history: {len(self.history)}")
-    if self.do_reap:
+    if self.do_reap and os.path.exists(self.preffile):
         wait = not self.reap_slow(eager=True)
         if self.do_update:
             self.launch_slow(wait=wait)
