@@ -9,10 +9,7 @@ import stat
 import time
 from .util import timing
 import json
-try:
-    from winmagic import magic
-except ImportError:
-    import magic
+import magic
 import msgpack
 import os
 ue = "surrogatepass"
