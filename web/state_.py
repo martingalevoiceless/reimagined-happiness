@@ -6,6 +6,30 @@ import os
 import subprocess
 import msgpack
 import time
+
+def offset(x, ratio):
+    ratio = min(ratio, 0.98)
+    ratio = max(ratio, 0.02)
+    ex = numpy.exp(x)
+    ey = (1/ratio - 1) * ex
+    return numpy.log(ey)
+
+def calculate_desired_positions(comps, model_, is_wins):
+    res = {}
+    for otherkey, vals in comps.items():
+        ratio = vals[0] / (vals[0] + vals[1])
+        if ratio < 0.5 and is_wins:
+            continue
+        elif ratio > 0.5 and not is_wins:
+            continue
+        magnitude = numpy.sqrt(numpy.sum(numpy.asarray(vals) ** 2))
+        oval = model_.getval(otherkey)
+        if oval is None:
+            continue
+        o = offset(oval, 1-ratio)
+        res[otherkey] = o
+    return res
+
 def rand_video_fragments(f, existing_hash=None, num_samples=None):
     from web import opts
     from web.util import nanguard, timing
@@ -268,14 +292,27 @@ def select_next(self, path):
                             else:
                                 print("WARNING: pulled 10 items from inversions pool, all too close to bother with")
                                 continue
+                            firstlabel = secondlabel = "inversions"
                             if random.random() < opts.inversion_neighborhood:
-                                first = self.geth(random.sample(pair,2)[0])
+                                pair = list(pair)
+                                random.shuffle(pair)
+                                firsth, otherh = pair
+                                first = self.geth(firsth)
+
+                                expected_win = self.model_.getval(firsth) > self.model_.getval(otherh)
+                                desired_positions = calculate_desired_positions(self.stats.comparisons.get(firsth, {}), self.model_, expected_win)
+                                if expected_win:
+                                    op = max
+                                else:
+                                    op = min
+                                secondh = op(desired_positions.keys(), key=lambda k: desired_positions[k])
+                                second = self.geth(secondh)
+                                secondlabel = f"existing comparison {desired_positions}"
 
                                 #force_neighborhood = True
                             else:
                                 first, second = self.geth(pair[0]), self.geth(pair[1])
                                 
-                            firstlabel = secondlabel = "inversions"
                             no_vfrag = True
                 if not no_vfrag:
                     first, = rand_video_fragments(first, num_samples=1)

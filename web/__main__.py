@@ -15,6 +15,8 @@ def main(base, pref_file, output_file, completion_file,ready_file):
     files = FilesCache(base)
     state = State(pref_file, files, None, False)
     errcount = 0
+    while not os.path.exists(pref_file):
+        time.sleep(0.3)
     with open(pref_file, "r") as reader:
         while True:
             try:
