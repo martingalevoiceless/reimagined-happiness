@@ -169,6 +169,8 @@ def select_next(self, path):
                 skipped_hashes = set()
                 while last_winner is None:
                     indices = {}
+                    if iters + 1 > len(self.history):
+                        break
                     iters += 1
                     if iters > opts.recent_wins * 2:
                         break
