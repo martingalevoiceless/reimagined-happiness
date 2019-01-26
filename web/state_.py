@@ -100,7 +100,7 @@ def read(self):
             i = x["items"]
             self.seen.mark_seen(i[0]["hash"], x["viewstart"])
             self.seen.mark_seen(i[1]["hash"], x["viewstart"])
-    z = numpy.array(list(self.seen.seen_suppression.values()))
+    z = numpy.array(list(self.seen.seen_suppression.values()) or [0])
     ss = self.seen.bulk_check_seen()
     print(f"seen_suppression: mean={numpy.mean(z)}, max={numpy.max(z)}, min={numpy.min(z)}, median={numpy.median(z)}, seen={len(ss)}")
     print(f"history: {len(self.history)}")
