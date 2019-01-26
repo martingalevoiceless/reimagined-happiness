@@ -35,6 +35,7 @@ def main(base, pref_file, output_file, completion_file,ready_file):
                 with timing("slow_calc::save"):
                     with open(output_file + "_", "wb") as writer:
                         msgpack.pack(state.model_.to_msgpack(), writer, use_bin_type=True)
+                    os.unlink(output_file)
                     os.rename(output_file + "_", output_file)
                     with open(ready_file, "wb") as writer:
                         writer.write(b" ")
