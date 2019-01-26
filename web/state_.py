@@ -260,13 +260,20 @@ def select_next(self, path):
                                 print("WARNING: fail on missing high quality item")
                                 continue
                             firstlabel = f"high-quality ({hidx}/{len(self.model_.sorted_hashes)}):"
-                    elif (random.random() > len(randpool) / opts.explore_target and len(self.model_.newh)):
-                        with timing("newh"):
-                            firsth = numpy.random.choice(self.model_.newh, p=self.model_.new)
-                            prior = self.model_.newp[firsth]
-                            first = self.geth(firsth)
-                            assert first
-                            firstlabel = "explore"
+                    elif (random.random() > len(randpool) / opts.explore_target):
+                        if len(self.model_.newh):
+                            with timing("newh"):
+                                firsth = numpy.random.choice(self.model_.newh, p=self.model_.new)
+                                if firsth in self.model_.newp:
+                                    prior = self.model_.newp[firsth]
+                                else:
+                                    prior = 0
+                                first = self.geth(firsth)
+                                assert first
+                                firstlabel = "explore"
+                        else:
+                            first = random.choice(list(self.bh.values()))
+                            firstlabel = "explore_simple"
                     elif random.randrange(0, int(len(randpool) + min(opts.inversion_max_count, len(inversions))/opts.inversion_ratio)) < len(randpool):
                         with timing("randpool"):
                             h = random.choice(randpool)
@@ -318,7 +325,7 @@ def select_next(self, path):
                     first, = rand_video_fragments(first, num_samples=1)
 
                 with timing("select second"):
-                    if second is None:
+                    if second is None and len(self.model_.model):
                         firsthash = first["hash"]
                         if prior is not None:
                             idx = self.model_.getidx(prior)
@@ -364,6 +371,16 @@ def select_next(self, path):
                         secondlabel = f"neighborhood ({idx}->{self.model_.sorted_ids[h]})"
                         if force_neighborhood:
                             secondlabel += " force_neighborhood"
+                    elif not len(self.model_.model):
+                        if len(self.model.newh):
+                            with timing("newh"):
+                                secondh = numpy.random.choice(self.model_.newh, p=self.model_.new)
+                                second = self.geth(secondh)
+                                assert second
+                                secondlabel = "explore"
+                        else:
+                            second = random.choice(list(self.bh.values()))
+                            secondlabel = "explore_simple"
                 if not no_vfrag:
                     second, = rand_video_fragments(second, num_samples=1)
                 #print("result:")
