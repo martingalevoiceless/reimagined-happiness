@@ -27,7 +27,7 @@ def calculate_desired_positions(comps, model_, is_wins):
         if oval is None:
             continue
         o = offset(oval, 1-ratio)
-        res[otherkey] = o
+        res[otherkey] = (o, magnitude)
     return res
 
 def rand_video_fragments(f, existing_hash=None, num_samples=None):
@@ -315,10 +315,10 @@ def select_next(self, path):
                                 expected_win = self.model_.getval(firsth) > self.model_.getval(otherh)
                                 desired_positions = calculate_desired_positions(self.stats.comparisons.get(firsth, {}), self.model_, expected_win)
                                 if expected_win:
-                                    op = max
+                                    mult = -1
                                 else:
-                                    op = min
-                                secondh = op(desired_positions.keys(), key=lambda k: desired_positions[k])
+                                    mult = 1
+                                secondh = min(desired_positions.keys(), key=lambda k: desired_positions[k][1]/2 + mult * desired_positions[k][0] )
                                 second = self.geth(secondh)
                                 secondlabel = f"existing comparison {desired_positions}"
 

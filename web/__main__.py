@@ -4,7 +4,7 @@ import time
 import os
 from .util import timing
 from web import util
-from .state import Stats, Model, State
+from .state import Stats, Model, State, reload_all
 from .files import FilesCache
 from .choix_custom import setup
 
@@ -29,6 +29,7 @@ def main(base, pref_file, output_file, completion_file,ready_file):
                 #with timing("slow_calc::make_objs"):
                 #    stats = Stats(*packed_stats)
                 #    model = Model(*packed_model, af2=af2)
+                reload_all()
                 state.read_from_file(reader)
                 with timing("slow_calc::main"):
                     more_needed = state.model_.slow_calculations(state.stats, [])

@@ -552,3 +552,12 @@ def calculate_dists(self, comparisons):
         else:
             continue
     return dists, weights
+
+def slow_calculations(self, stats, hashes_to_debug, extra=False):
+    more = self.calculate_ranking(stats, extra)
+    self.calculate_nearest_neighborhood(stats, hashes_to_debug, extra)
+    self.update_new_pool(stats)
+    return more
+
+def __repr__(self):
+    return f"Model(all_items={self.all_items}, model={self.model.tolist()}, searching_pool={self.searching_pool}, inversions={self.inversions})"

@@ -134,15 +134,6 @@ class Stats:
     #    included = not (ratio > opts.winning_ratio or ratio < opts.losing_ratio or (wins + losses) > opts.max_shows)
     #    return ratio, included
 
-    def record_win(self, winning, losing, decay, separation):
-        return stats_.record_win(self, winning, losing, decay, separation)
-
-    def update(self, item, initial=False):
-        return stats_.update(self, item, initial)
-
-    def from_history(self, history):
-        return stats_.from_history(self, history)
-
     def __eq__(self, other):
         return (self.pair_wins == other.pair_wins and
                 self.dislike == other.dislike and
@@ -156,6 +147,15 @@ class Stats:
         return (
             f"Stats(pair_wins={self.pair_wins}, dislike={self.dislike}, too_close={self.too_close}, incomparable_pairs={self.incomparable_pairs}, comparisons={self.comparisons}, win_counts={self.win_counts}, loss_counts={self.loss_counts})"
         )
+
+    def __getattr__(self, name):
+        try:
+            return super().__getattr__(name)
+        except AttributeError:
+            res = getattr(model_, name)
+            if hasattr(res, "__get__"):
+                res = res.__get__(self, type(self))
+            return res
 
 class Model:
     def __init__(self, all_items=None, model=None, searching_pool=None, inversions=None, new=None, newh=None, newp=None, distances=None, af2=None):
@@ -215,67 +215,14 @@ class Model:
         self.sorted_hashes = numpy.asarray(self.all_items)[self.sequence]
         self.sorted_ids = {value: index for index, value in enumerate(self.sorted_hashes)}
 
-    def add(self, x):
-        return model_.add(self, x)
-
-    def getid(self, x):
-        return model_.getid(self, x)
-
-    def is_dropped(self, stats, h):
-        return model_.is_dropped(self, stats, h)
-
-    def min(self):
-        return model_.min_(self)
-    def max(self):
-        return model_.max_(self)
-
-    def getprob(self, item1, item2):
-        return model_.getprob(self, item1, item2)
-
-    def prepare_pairs(self, stats):
-        return model_.prepare_pairs(self, stats)
-
-    def extend_model(self, stats):
-        return model_.extend_model(self, stats)
-
-    def calculate_ranking(self, stats, extra=False):
-        return model_.calculate_ranking(self, stats, extra)
-
-    def getidx(self, val):
-        return model_.getidx(self, val)
-    def getval(self, h):
-        return model_.getval(self, h)
-
-    def calc_next_index(self, h, vals, weights, dists_out, debug=False, force=False, existing_val=None):
-        return model_.calc_next_index(self, h, vals, weights, dists_out, debug, force, existing_val)
-
-    def weighted_softmin(self, a, weights, inv=False):
-        return model_.weighted_softmin(self, a, weights, inv)
-
-    def softmin(self, directional_distances, inv=False):
-        return model_.softmin(self, directional_distances, inv)
-
-    def check_inversion(self, stats, pair):
-        return model_.check_inversion(self, stats, pair)
-
-    def calculate_nearest_neighborhood(self, stats, hashes_to_debug, extra=False, save=True):
-        return model_.calculate_nearest_neighborhood(self,stats,hashes_to_debug, extra, save)
-    def update_new_pool(self, stats):
-        return model_.update_new_pool(self, stats)
-    def update_bayes(self, mean, var, n, sample_mean, sample_var):
-        return model_.update_bayes(self, mean, var, n, sample_mean, sample_var)
-    def update_bayes_multi(self, mean, stddev, sample_mean, sample_stddev):
-        return model_.update_bayes_multi(self, mean, stddev, sample_mean, sample_stddev)
-    def calculate_dists(self, comparisons):
-        return model_.calculate_dists(self, comparisons)
-    def slow_calculations(self, stats, hashes_to_debug, extra=False):
-        reload_all()
-        more = self.calculate_ranking(stats, extra)
-        self.calculate_nearest_neighborhood(stats, hashes_to_debug, extra)
-        self.update_new_pool(stats)
-        return more
-    def __repr__(self):
-        return f"Model(all_items={self.all_items}, model={self.model.tolist()}, searching_pool={self.searching_pool}, inversions={self.inversions})"
+    def __getattr__(self, name):
+        try:
+            return super().__getattr__(name)
+        except AttributeError:
+            res = getattr(model_, name)
+            if hasattr(res, "__get__"):
+                res = res.__get__(self, type(self))
+            return res
 
 class State:
     def __init__(self, preffile, files, tempdir, update=True, do_reap=True):
@@ -322,19 +269,11 @@ class State:
         self.seen = SeenPool()
         self.last_slow = 0
 
-    def fh(self, h): return state_.fh(self, h)
-    def read_from_file(self, reader): return state_.read_from_file(self, reader)
-    def read(self): return state_.read(self)
-    def geth(self, x): return state_.geth(self, x)
-    def select_next(self, path):
-        return state_.select_next(self, path)
-    def select_next_similarity(self, path):
-        return state_.select_next_similarity(self, path)
-    def getinfo(self, *hs, bulk_seen=None, do_seen=True, pools=True, details=True, debugpools=True):
-        return state_.getinfo(self, *hs, bulk_seen=bulk_seen, do_seen=do_seen, pools=pools, details=details, debugpools=debugpools)
-    def reap_slow(self, wait=False, eager=False):
-        return state_.reap_slow(self, wait, eager)
-    def launch_slow(self, wait=False):
-        return state_.launch_slow(self, wait)
-    def update(self, info, file1, file2, file3=None):
-        return state_.update(self, info, file1, file2, file3=None)
+    def __getattr__(self, name):
+        try:
+            return super().__getattr__(name)
+        except AttributeError:
+            res = getattr(state_, name)
+            if hasattr(res, "__get__"):
+                res = res.__get__(self, type(self))
+            return res
