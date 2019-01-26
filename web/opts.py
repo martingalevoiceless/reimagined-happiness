@@ -88,7 +88,7 @@ ongoing_tolerance = 1e-5
 
 alpha = lambda count: 0.3/count
 
-min_to_rank = 3
+min_to_rank = 10
 
 weighted_softmin_sharpness = 4
 
