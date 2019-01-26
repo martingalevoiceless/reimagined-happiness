@@ -10,18 +10,20 @@ windows:
 1. install chocolatey: [http://chocolatey.org](http://chocolatey.org)
 2. make a directory somewhere to put your code, open a terminal, `cd C:/Users/username/that/directory`
 3. set up:
-        choco install python nodejs git ffmpeg
-        git clone https://github.com/martingalevoiceless/reimagined-happiness.git
-        cd reimagined-happiness/web/
-        npm install
-        node_modules\.bin\webpack --config webpack.config.js
-        cd ..
-        python -m venv ve
-        ve\Scripts\activate
-        pip install python-magic-bin
-        pip install https://download.pytorch.org/whl/cu100/torch-1.0.0-cp37-cp37m-win_amd64.whl
-        pip install -e .
-        copy pyramid.ini.example pyramid.ini
+```
+choco install python nodejs git ffmpeg
+git clone https://github.com/martingalevoiceless/reimagined-happiness.git
+cd reimagined-happiness/web/
+npm install
+node_modules\.bin\webpack --config webpack.config.js
+cd ..
+python -m venv ve
+ve\Scripts\activate
+pip install python-magic-bin
+pip install https://download.pytorch.org/whl/cu100/torch-1.0.0-cp37-cp37m-win_amd64.whl
+pip install -e .
+copy pyramid.ini.example pyramid.ini
+```
 4. edit pyramid.ini:
 ```
 base = C:/Users/username/path/to/your/files/
