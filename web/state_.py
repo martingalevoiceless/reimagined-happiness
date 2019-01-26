@@ -80,7 +80,7 @@ def read_from_file(self, reader):
                 l["items"] = [self.bh.get(item["hash"], item) for item in l["items"]]
             if "current" in l:
                 self.current = [x["hash"] for x in l["items"]]
-                for x in self.history[-1]["items"]:
+                for x in l["items"]:
                     if x["hash"] in self.seen_allowed:
                         self.seen_allowed.remove(x["hash"])
                 continue
@@ -94,6 +94,10 @@ def read_from_file(self, reader):
             elif type(self.history[-1].get("preference")) == dict and self.history[-1]["preference"].get("not_sure"):
                 for x in self.history[-1]["items"]:
                     self.seen_allowed.add(x["hash"])
+            else:
+                for x in l["items"]:
+                    if x["hash"] in self.seen_allowed:
+                        self.seen_allowed.remove(x["hash"])
             if "items" in self.history[-1]:
                 try:
                     self.history[-1]["items"] = [self.bh.get(item["hash"], item) for item in self.history[-1]["items"]]
