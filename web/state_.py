@@ -532,7 +532,7 @@ def launch_slow(self, wait=False):
             if self.subproc is None:
                 args = [sys.executable, "-m", "web", self.files.base, self.preffile, self.outputfile, self.completionfile, self.readyfile]
                 print(" ".join(args))
-                self.subproc = subprocess.Popen(args, stdin=open("/dev/null", "rb"))
+                self.subproc = subprocess.Popen(args, stdin=open(os.devnull, "rb"))
         if wait:
             with timing("wait"):
                 self.reap_slow(True)

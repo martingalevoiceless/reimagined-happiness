@@ -51,7 +51,7 @@ class FilesCache:
         self.results = {}
         self.magics = {}
         self.videos = {}
-        self.vcode="5"
+        self.vcode="6"
         self.results_from_cache = False
         loaded_results = None
         self.all_images = []
@@ -60,7 +60,7 @@ class FilesCache:
         if cache2:
             with timing("read images"):
                 try:
-                    with open("all_images.msgpack", "rb") as r:
+                    with open(f"all_images{self.vcode}.msgpack", "rb") as r:
                         self.all_images = msgpack.unpack(r, raw=False, unicode_errors="surrogatepass")
                     for x in self.all_images:
                         self.by_hash[x["hash"]] = x
@@ -70,7 +70,7 @@ class FilesCache:
                     pass
         with timing("read allfiles"):
             try:
-                with open('allfiles', 'r') as reader:
+                with open(f'allfiles{self.vcode}', 'r') as reader:
                     loaded_results = json.loads(reader.read())
             except FileNotFoundError:
                 pass
@@ -174,7 +174,7 @@ class FilesCache:
                     os.rename("allfiles", "allfiles." + str(int(time.time())))
                 except FileNotFoundError:
                     pass
-                with open("allfiles", "w")  as writer:
+                with open(f"allfiles{self.vcode}", "w")  as writer:
                     writer.write(json.dumps(self.results))
                 print("done")
                 sys.stdout.flush()
@@ -229,7 +229,7 @@ class FilesCache:
                 print("image count:")
                 print(len(self.all_images))
                 with timing("write all_images.msgpack"):
-                    with open("all_images.msgpack", "wb") as writer:
+                    with open(f"all_images{self.vcode}.msgpack", "wb") as writer:
                         msgpack.pack(self.all_images, writer, use_bin_type=True, unicode_errors="surrogatepass")
             return self.all_images, self.by_hash
 
