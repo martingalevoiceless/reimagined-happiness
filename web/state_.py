@@ -372,7 +372,7 @@ def select_next(self, path):
                         if force_neighborhood:
                             secondlabel += " force_neighborhood"
                     elif not len(self.model_.model):
-                        if len(self.model.newh):
+                        if len(self.model_.newh):
                             with timing("newh"):
                                 secondh = numpy.random.choice(self.model_.newh, p=self.model_.new)
                                 second = self.geth(secondh)
