@@ -1,11 +1,13 @@
-In browser image viewer. to set up (mac, linux):
+In browser image viewer with ranking.
+
+## mac/linux setup (needs node.js installed already):
 
 1. `cp pyramid.ini.example pyramid.ini`
 2. `vim pyramid.ini`, edit to point to your image database and to a correct tempdir
 3. `bash setup_web.sh` -- or literally just `cd web; npm install; node_modules/.bin/webpack`
 4. `bash run_pyramid.sh` -- if needed, downloads fully isolated copy of pyenv, uses it to install 3.7.0, then sets up a virtualenv; then runs the server
 
-windows:
+## windows:
 
 1. install chocolatey: [http://chocolatey.org](http://chocolatey.org)
 2. make a directory somewhere to put your code, open a terminal, `cd C:/Users/username/that/directory`
