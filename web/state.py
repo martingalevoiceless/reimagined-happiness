@@ -152,7 +152,7 @@ class Stats:
         try:
             return super().__getattr__(name)
         except AttributeError:
-            res = getattr(model_, name)
+            res = getattr(stats_, name)
             if hasattr(res, "__get__"):
                 res = res.__get__(self, type(self))
             return res

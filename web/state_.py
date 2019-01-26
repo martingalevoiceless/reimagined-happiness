@@ -72,12 +72,13 @@ def read_from_file(self, reader):
         for line in reader:
             if not line: continue
             l = json.loads(line)
-            if "items" in l:
-                for x in l.get("items", []):
-                    if type(x["hash"]) == dict:
-                        # fix oopsie
-                        x["hash"] = x["hash"]["hash"]
-                l["items"] = [self.bh.get(item["hash"], item) for item in l["items"]]
+            if "items" not in l:
+                continue
+            for x in l.get("items", []):
+                if type(x["hash"]) == dict:
+                    # fix oopsie
+                    x["hash"] = x["hash"]["hash"]
+            l["items"] = [self.bh.get(item["hash"], item) for item in l["items"]]
             if "current" in l:
                 self.current = [x["hash"] for x in l["items"]]
                 for x in l["items"]:
