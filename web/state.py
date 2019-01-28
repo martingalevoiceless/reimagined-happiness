@@ -215,6 +215,11 @@ class Model:
         self.sorted_hashes = numpy.asarray(self.all_items)[self.sequence]
         self.sorted_ids = {value: index for index, value in enumerate(self.sorted_hashes)}
 
+    def min(self):
+        return self.min_()
+    def max(self):
+        return self.max_()
+
     def __getattr__(self, name):
         try:
             return super().__getattr__(name)

@@ -4,8 +4,15 @@ explore_target = 30
 high_quality_ratio = 0.0
 #neighborhood = 0.07
 max_neighborhood = 1000
-inversion_ratio = 6
+inversion_ratio = 10
 inversion_max_count = 90
+
+virt_dirsize_offset = 0.1
+virt_dirsize_ideal_width = 100
+virt_dirsize_ideal_shape = 3.3
+virt_dirsize_ideal_peak = 4
+virt_dirsize_ideal = 230
+virt_dirsize_lin_mag = 14
 
 recent_wins = 20
 recent_wins_curve = 8
@@ -34,7 +41,7 @@ def neighborhood_func(x):
     J = 6.0
     z = 2 ** 13
     j = 1+(J/z)
-    m = 14
+    m = 200
     return m+j**(z**x)-j
     #return 2+x*20
     #target_precision_curve = 40
@@ -67,8 +74,8 @@ fix_inversions = True
 too_close_boost = 3
 initial_mag = 8
 min_mag = 0.3
-last_winner_prob = 0.0
-last_winner_last_winner_prob = 0.0
+last_winner_prob = 0.05
+last_winner_last_winner_prob = 0.2
 
 min_frag_length = 10
 
@@ -92,5 +99,5 @@ min_to_rank = 10
 
 weighted_softmin_sharpness = 4
 
-ambiguity_threshold = 0.6
+ambiguity_threshold = 0.5
 

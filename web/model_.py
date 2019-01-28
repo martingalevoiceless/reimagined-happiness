@@ -110,7 +110,7 @@ def extend_model(self, stats):
         #print(gp.shape)
         newvals = []
         for h in self.all_items[len(self.model):]:
-            dists, weights = self.calculate_dists((stats, stats.comparisons.get(h, {})))
+            dists, weights = self.calculate_dists(stats, stats.comparisons.get(h, {}), h)
             info = self.calc_next_index(h, dists, weights, {})[1]
             newvals.append(nanguard(info["mid"]))
         if len(newvals) != newlen:
@@ -306,7 +306,8 @@ def calculate_nearest_neighborhood(self, stats, hashes_to_debug, extra=False, sa
             if self.is_dropped(stats, pair[0]) or self.is_dropped(stats, pair[1]):
                 continue
             if pair in stats.incomparable_pairs: continue
-            if pair in stats.too_close: continue
+            if pair in stats.too_close:
+                rel_wins = tuple([nanguard(x + sum(rel_wins) + opts.too_close_boost * stats.too_close[pair]) for x in rel_wins])
             win_ratio = (rel_wins[0]) / (rel_wins[0] + rel_wins[1])
             win, loss = pair[0], pair[1]
             count = rel_wins[0] + rel_wins[1]
@@ -451,27 +452,32 @@ def calculate_nearest_neighborhood(self, stats, hashes_to_debug, extra=False, sa
         print(f"searching_pool: {len(sp)}, inversions: {len(iv)}")
 def update_new_pool(self, stats):
     from web.util import timing, softmax
+    from web import opts
     with timing("update_new_pool", 0.1):
         af = self.af2
         bh = self.bh2
         ds={}
         for h, v in zip(self.all_items, self.model):
             i = bh.get(h)
+            if i is None: 
+                i = bh.get(h.partition(":")[0])
             if i is None: continue
             d=i[1]
             dp = [d]
             if ":" in h:
-                dp.append(h)
+                dp.append(h.partition(":")[0])
             #u = self.distances.get(h, 0.5)
             for slice in range(0, max(1, len(dp))):
                 ds.setdefault("/".join(dp[:slice+1]), []).append(v)
         for h in stats.dislike.keys():
             i = bh.get(h)
+            if i is None: 
+                i = bh.get(h.partition(":")[0])
             if i is None: continue
             d=i[1]
             dp = [d]
             if ":" in h:
-                dp.append(h)
+                dp.append(h.partition(":")[0])
             for slice in range(0, max(1,len(dp))):
                 ds.setdefault("/".join(dp[:slice+1]), []).append(-3)
         new = []
@@ -484,14 +490,14 @@ def update_new_pool(self, stats):
             d=i[1]
             dp = d.split("/")
             if ":" in h:
-                dp.append(h)
+                dp.append(h.partition(":")[0])
             mean = 0
-            est = 0
+            est = 4
             #stddev = 4
             #var = stddev ** 2
             for slice in range(1, max(2,len(dp))):
                 dn="/".join(dp[:slice+1])
-                if dn not in ds: break
+                if dn not in ds: continue
                 if not ds[dn]:
                     continue
                 if dn not in cc:
@@ -499,16 +505,33 @@ def update_new_pool(self, stats):
                     #smean, std = numpy.mean(vs, axis=0)
                     ##_, var_ = self.update_bayes(0, 1, len(vs), smean, std ** 2)
                     #mean, var = self.update_bayes(mean, var, len(vs), smean,max(std**2, numpy.var(vs[:,0]))) #var_ * len(vs))
-                    cc[dn] = sum(ds[dn]) / (len(ds[dn]) ** 0.5), sum(ds[dn])/len(ds[dn]) #mean, var * len(vs)
+                    x = len(ds[dn])
+                    o = opts.virt_dirsize_offset
+                    w = opts.virt_dirsize_ideal_width
+                    s = opts.virt_dirsize_ideal_shape
+                    t = opts.virt_dirsize_ideal_peak
+                    z = opts.virt_dirsize_ideal
+                    l = opts.virt_dirsize_lin_mag
+
+                    mean = sum(ds[dn]) / len(ds[dn])
+
+                    if mean <= 0:
+                        mult = 1
+                    else:
+                        mult = (t-o)/(1+(abs(x-z)/w)**s)+o+min(x**1.1/2**l,t)
+                    cc[dn] = mean * mult, mean #mean, var * len(vs)
+                    if cc[dn][0] > 2 or mult > 3:
+                        print("dirname", dn, "info", x, mult, mult*mean, mean)
                     #print(dn, "smean,std:", smean, std, "mean:", mean, "std:", numpy.sqrt(var), "p_std:", numpy.sqrt(var*len(vs)), "n:", len(vs))
                 est, mean = cc[dn]
             #stddev = numpy.sqrt(var)
-            new.append(est/100.0)
+            new.append(est)
             newh.append(h)
             newp[h] = mean
         new = numpy.array(new)
-        sorted_ = numpy.argsort(new)[-1000:]
+        sorted_ = numpy.argsort(new)[-10000:]
         self.new = softmax(new[sorted_])
+        print("update_new_pool info", len(af), len(bh), len(self.all_items), len(self.model), len(stats.dislike), len(newp), len(new), len(newh), len(sorted_), len(cc), len(ds), self.new[:10] * len(self.new), self.new[-10:] * len(self.new))
         self.newh = numpy.array(newh)[sorted_].tolist()
         self.newp = newp
 def update_bayes(self, mean, var, n, sample_mean, sample_var):
@@ -531,8 +554,9 @@ def update_bayes_multi(self, mean, stddev, sample_mean, sample_stddev):
     mean = upper1 * denom + upper2 * denom
     var = var * sample_var[1] * denom
 
-def calculate_dists(self, comparisons):
-    stats, comparisons = comparisons
+def calculate_dists(self, stats, comparisons, h):
+    from web.util import timing, as_pair, nanguard
+    from web import opts
     dists = ([-50], [50])
     weights = ([1], [1])
     for other_hash, wins in comparisons.items():
@@ -540,6 +564,12 @@ def calculate_dists(self, comparisons):
         if other_val is None:
             continue
         if self.is_dropped(stats, other_hash):
+            continue
+        pair = as_pair(h, other_hash)
+        if pair in stats.too_close:
+            wins = tuple([nanguard(x + sum(wins) + opts.too_close_boost * stats.too_close[pair]) for x in wins])
+        win_ratio = (wins[0]) / (wins[0] + wins[1])
+        if win_ratio < opts.ambiguity_threshold and win_ratio > 1-opts.ambiguity_threshold:
             continue
         if wins[0] > wins[1]:
             decayed_ratio = ((wins[0]/ max(1e-10, wins[0] + wins[1])) - 0.5) * 2

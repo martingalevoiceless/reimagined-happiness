@@ -14,7 +14,9 @@ def offset(x, ratio):
     ey = (1/ratio - 1) * ex
     return numpy.log(ey)
 
-def calculate_desired_positions(comps, model_, is_wins):
+def calculate_inversion_priorities(self, key, is_wins):
+    reference = self.model_.getval(key)
+    comps = self.stats.comparisons.get(key, {})
     res = {}
     for otherkey, vals in comps.items():
         ratio = vals[0] / (vals[0] + vals[1])
@@ -23,11 +25,16 @@ def calculate_desired_positions(comps, model_, is_wins):
         elif ratio > 0.5 and not is_wins:
             continue
         magnitude = numpy.sqrt(numpy.sum(numpy.asarray(vals) ** 2))
-        oval = model_.getval(otherkey)
+        oval = self.model_.getval(otherkey)
         if oval is None:
             continue
         o = offset(oval, 1-ratio)
-        res[otherkey] = (o, magnitude)
+        dist = reference - o
+        if is_wins:
+            dist = -dist
+        print(".", ratio, magnitude, oval, o, dist, is_wins, reference)
+        res[key, otherkey] = (o, magnitude)
+    print(key, is_wins, reference, res)
     return res
 
 def rand_video_fragments(f, existing_hash=None, num_samples=None):
@@ -125,7 +132,7 @@ def read(self):
 
     with timing("mark history seen"):
         for x in self.history:
-            if "items" not in x: continue
+            if "items" not in x or "viewstart" not in x: continue
             i = x["items"]
             self.seen.mark_seen(i[0]["hash"], x["viewstart"])
             self.seen.mark_seen(i[1]["hash"], x["viewstart"])
@@ -307,25 +314,16 @@ def select_next(self, path):
                                 print("WARNING: pulled 10 items from inversions pool, all too close to bother with")
                                 continue
                             firstlabel = secondlabel = "inversions"
-                            if random.random() < opts.inversion_neighborhood:
-                                pair = list(pair)
-                                random.shuffle(pair)
-                                firsth, otherh = pair
-                                first = self.geth(firsth)
+                            first_won = self.model_.getval(pair[0]) < self.model_.getval(pair[1])
+                            vals = self.stats.comparisons.get(pair[0], {}).get(pair[1], (0,0))
+                            magnitude = numpy.sqrt(numpy.sum(numpy.asarray(vals) ** 2))
+                            desired_positions = {pair: (0, magnitude)}
+                            desired_positions.update(self.calculate_inversion_priorities(pair[0], not first_won))
+                            desired_positions.update(self.calculate_inversion_priorities(pair[1], first_won))
+                            firsth, secondh = min(desired_positions.keys(), key=lambda k: desired_positions[k][1]/2 + desired_positions[k][0] )
+                            first = self.geth(firsth)
+                            second = self.geth(secondh)
 
-                                expected_win = self.model_.getval(firsth) > self.model_.getval(otherh)
-                                desired_positions = calculate_desired_positions(self.stats.comparisons.get(firsth, {}), self.model_, expected_win)
-                                if expected_win:
-                                    mult = -1
-                                else:
-                                    mult = 1
-                                secondh = min(desired_positions.keys(), key=lambda k: desired_positions[k][1]/2 + mult * desired_positions[k][0] )
-                                second = self.geth(secondh)
-                                secondlabel = f"existing comparison {desired_positions}"
-
-                                #force_neighborhood = True
-                            else:
-                                first, second = self.geth(pair[0]), self.geth(pair[1])
                                 
                             no_vfrag = True
                 if not no_vfrag:
@@ -338,7 +336,7 @@ def select_next(self, path):
                             idx = self.model_.getidx(prior)
                         else:
                             comparisons = self.stats.comparisons.get(firsthash, {})
-                            dists, weights = self.model_.calculate_dists((self.stats, comparisons))
+                            dists, weights = self.model_.calculate_dists(self.stats, comparisons, firsthash)
                             idx, info = self.model_.calc_next_index(firsthash, dists, weights, {}, debug=True, force=force_neighborhood, existing_val=self.model_.getval(firsthash))
                             #print("calc_next_index info:", firsthash, dists, info, idx, force_neighborhood)
                             if idx is None:
@@ -491,7 +489,7 @@ def getinfo(self, *hs, bulk_seen=None, do_seen=True, pools=True, details=True, d
             ires.append(f"item: +{self.stats.win_counts.get(x, 0):0.2f}, -{self.stats.loss_counts.get(x, 0):0.2f}")
         if do_seen:
             comparisons = self.stats.comparisons.get(x, {})
-            dists, weights = self.model_.calculate_dists((self.stats, comparisons))
+            dists, weights = self.model_.calculate_dists(self.stats, comparisons, x)
             idx, info = self.model_.calc_next_index(x, dists, weights, {}, debug=True, existing_val=self.model_.getval(x))
             ires.append(f"nextidx: {idx}, {int(info['finished_enough'])},{int(info['seen_enough'])},{int(info['is_goat'])},{info['prec']:0.1f},{info['delta']:0.0f},{info['adelta']:0.0f}")
             #pools.append("model.distances")
@@ -525,6 +523,12 @@ def getinfo(self, *hs, bulk_seen=None, do_seen=True, pools=True, details=True, d
                 x.extend(ires)
         result[0].append(f"{100*(wins_a/(max(wins_b+wins_a, 0.0001))):0.1f}% ratio ({wins_a:0.2f}/{wins_b:0.2f}), model={100*proba:.1f}%, ")
         result[1].append(f"{100*(wins_b/(max(wins_a+wins_b, 0.0001))):0.1f}% ratio ({wins_b:0.2f}/{wins_a:0.2f}), model={100*probb:.1f}%, ")
+    if debugpools:
+        for res, h in zip(result, hs):
+            v = self.geth(h)
+            if v is not None:
+                res.append(os.path.join(*v["path"].split("/")[-4:-1]))
+
 
     return result
 
