@@ -41,7 +41,8 @@ make sure to not expose your site to the internet without authentication (you do
 
 views:
 
-- compare view: [http://localhost:8844/\_/compare/](http://localhost:8844/_/compare/)
+- ranking compare view: [http://localhost:8844/\_/compare/](http://localhost:8844/_/compare/)
+- similarity compare view: [http://localhost:8844/\_/similarity/](http://localhost:8844/_/similarity/) - answer the question "which of these things is the least like the others?" repeatedly, eventually get a bunch of vectors representing your images. Pulls from the ranked data, rather than the full dataset, and prioritizes high-ranking items, so you'll need to rank some first to use this at the moment. currently no tools for making use of the similarity data, though I'm intending to use it to try to predict variation in ranking from session to session.
 - file browser view: [http://localhost:8844/\_/p/](http://localhost:8844/_/p/)
 - history view: `http://localhost:8844/_/history/<file hash>` (can be opened by shift-j or shift-o in compare)
 
