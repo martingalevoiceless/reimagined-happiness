@@ -3,6 +3,7 @@ import subprocess
 import time
 import sys
 import numpy
+import tempfile
 import msgpack
 import json
 import os
@@ -94,8 +95,9 @@ class SeenPool:
         self.seen_suppression[h] = max(int(nanguard(util.squash(self.seen_suppression.get(h, opts.seen_suppression_min) * opts.seen_suppression_rate - delta, opts.seen_suppression_max))), opts.seen_suppression_min)
 
 class Stats:
-    def __init__(self, pair_wins=None, dislike=None, too_close=None, incomparable_pairs=None):
+    def __init__(self, pair_wins=None, dislike=None, too_close=None, incomparable_pairs=None, triplet_diffs=None):
         self.pair_wins = pair_wins or {}
+        self.triplet_diffs = triplet_diffs or {}
         self.dislike = dislike or {}
         self.too_close = too_close or {}
         self.incomparable_pairs = incomparable_pairs or {}
@@ -118,6 +120,18 @@ class Stats:
                 self.win_counts[pair[0]] = self.win_counts.get(pair[0], 0) + values[0]
             self.comparisons.setdefault(pair[0], {})[pair[1]] = values
             self.comparisons.setdefault(pair[1], {})[pair[0]] = values[::-1]
+
+    @property
+    def triplet_diffs(self):
+        return self._triplet_diffs
+
+    @triplet_diffs.setter
+    def triplet_diffs(self, val):
+        self._triplet_diffs = val
+        self.similarity = {}
+        for pair, values in val.items():
+            for ia,ib,ic in itertools.permutations(list(range(3)), 3):
+                self.similarity.setdefault(pair[ia], {}).setdefault(pair[ib], {})[pair[ic]] = (values[ia], values[ib], values[ic])
 
     def to_msgpack(self):
         return [
@@ -158,11 +172,30 @@ class Stats:
             return res
 
 class Model:
-    def __init__(self, all_items=None, model=None, searching_pool=None, inversions=None, new=None, newh=None, newp=None, distances=None, af2=None):
+    def __init__(self, all_items=None, model=None,
+            searching_pool=None, inversions=None, new=None,
+            newh=None, newp=None, distances=None,
+            all_sim_items=None, searching_pool_sim=None,
+            vec_file=None, af2=None):
         self.all_items = all_items or []
         self.model = nanguard(model or [])
 
+        self.all_sim_items = all_sim_items or []
+        vec_stds = None
+        vec_means = None
+        next_directions = None
+        if vec_file is not None and os.path.exists(vec_file):
+            with numpy.load(vec_file) as reader:
+                vec_means = reader["vec_means"]
+                vec_stds = reader["vec_stds"]
+                next_directions = reader["next_directions"]
+        self.vec_means = nanguard(vec_means if vec_means is not None else [])
+        self.vec_stds = nanguard(vec_stds if vec_stds is not None else [])
+        self.next_directions = nanguard(next_directions if next_directions is not None else numpy.asarray([]))
+
         self.searching_pool = searching_pool or {}
+        print("setting searching_pool_sim:", len(searching_pool_sim) if searching_pool_sim is not None else None)
+        self.searching_pool_sim = searching_pool_sim or {}
         self.inversions = inversions or {}
 
         self.af2 = af2 or []
@@ -177,11 +210,21 @@ class Model:
         self.newh = [fh(h) for h in self.newh]
         self.all_items = [fh(h) for h in self.all_items]
         self.searching_pool = {fh(h): y for h, y in self.searching_pool.items()}
+        self.all_sim_items = [fh(h) for h in self.all_sim_items]
+        self.searching_pool_sim = {fh(h): y for h, y in self.searching_pool_sim.items()}
         self.af2 = [(fh(h), y) for (h, y) in self.af2]
         self.bh2 = {fh(h): y for h, y in self.bh2.items()}
         self.newp = {fh(h): y for h, y in self.newp.items()}
 
-    def to_msgpack(self, include_derived=True):
+    def to_msgpack(self, direction, include_derived=True):
+        if os.path.exists("/run/shm"):
+            td = "/run/shm/app/"
+        else:
+            td = os.path.join(tempfile.gettempdir(), "app")
+        if not os.path.exists(td):
+            os.makedirs(td)
+        filename = os.path.join(td, direction+"_vecs.npz")
+        numpy.savez(filename, vec_means=self.vec_means,vec_stds=self.vec_stds, next_directions=self.next_directions)
         return [
             self.all_items,
             self.model.tolist(),
@@ -192,6 +235,9 @@ class Model:
             self.newh if include_derived else [],
             self.newp if include_derived else {},
             self.distances,
+            self.all_sim_items,
+            self.searching_pool_sim,
+            filename
         ]
 
     @property
@@ -203,6 +249,28 @@ class Model:
             val = list(val)
         self._all_items = val
         self.ids = {value: index for index, value in enumerate(self._all_items)}
+    @property
+    def all_sim_items(self):
+        return self._all_sim_items
+    @all_sim_items.setter
+    def all_sim_items(self, val):
+        if type(val) != list:
+            val = list(val)
+        self._all_sim_items = val
+        self.ids_sim = {value: index for index, value in enumerate(self._all_sim_items)}
+
+    @property
+    def vec_means(self):
+        return self._vec_means
+    @vec_means.setter
+    def vec_means(self, val):
+        self._vec_means = numpy.asarray(val)
+    @property
+    def vec_stds(self):
+        return self._vec_stds
+    @vec_stds.setter
+    def vec_stds(self, val):
+        self._vec_stds = numpy.asarray(val)
 
     @property
     def model(self):
@@ -264,6 +332,7 @@ class State:
         new = util.softmax([1] * len(self.af)) if len(af) else []
         newh = [x["hash"] for x in self.af]
         if tempdir is not None:
+            self.infofile = os.path.join(self.tempdir, "info")
             self.inputfile = os.path.join(self.tempdir, "input")
             self.outputfile = os.path.join(self.tempdir, "output")
             self.completionfile = os.path.join(self.tempdir, "completion")

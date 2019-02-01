@@ -124,22 +124,22 @@ def similarity_put(request):
         if len(path) == 3:
             with timing("update"):
                 request.state.update(info, path[0], path[1], path[2])
-        return compare_inner(request, path, True, info)
+        return similarity_inner(request, path, True, info)
 
 
 def similarity_inner(request, path, had_preference, info):
     with timing("compare_inner"):
-        if path and not had_preference and len(path) >= 2 and request.state.geth(path[0]) and request.state.geth(path[1]):
+        if path and not had_preference and len(path) >= 3 and request.state.geth(path[0]) and request.state.geth(path[1]) and request.state.geth(path[2]):
             #print(path)
             with timing("similarity_inner::current"):
                 a_path, b_path, c_path = path[:3]
                 a = request.state.geth(a_path)
                 b = request.state.geth(b_path)
-                c = request.state.geth(b_path)
+                c = request.state.geth(c_path)
                 a, = rand_video_fragments(a, num_samples=1)
                 b, = rand_video_fragments(b, num_samples=1)
                 c, = rand_video_fragments(c, num_samples=1)
-                proba, probb, proc = request.state.getinfo(a, b, c)
+                proba, probb, probc = request.state.getinfo(a, b, c)
             info = {"t": ["manual", "manual", "manual"], "i": [proba, probb, probc]}
         else:
             a, b, c, proba, probb, probc, info = request.state.select_next_similarity(path)

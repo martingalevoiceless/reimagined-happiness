@@ -218,7 +218,7 @@ class SingleFile_ extends UtilComponent {
                             <Button
                                 onPress={() => this.props.setinfo(false)}
                                 title="hide"
-                                color="#999999"
+                                color="#404040"
                                 style={styles.vbutton}
                                 accessibilityLabel="hide info"
                                 />
@@ -249,7 +249,7 @@ class SingleFile_ extends UtilComponent {
                     <Button
                         onPress={() => this.props.setinfo(true)}
                         title="info"
-                        color="#999999"
+                        color="#404040"
                         accessibilityLabel="info"
                         />
             }
@@ -712,11 +712,10 @@ class Compare_ extends React.Component {
             browser: styles.browser,
             compare_pane: styles.compare_pane,
             compare_buttons: styles.compare_buttons,
-            too_close: "Too Close",
-            incomparable:"Incomparable",
-            goes: "Goes Well",
+            too_close: "Too close",
+            incomparable:"Incomp.",
+            goes: "Goes",
             undo: "Undo",
-            transpose: "Transpose"
         };
         if (this.state.hor) {
             dir = {
@@ -727,7 +726,6 @@ class Compare_ extends React.Component {
                 incomparable:"!=",
                 goes: "+=",
                 undo: "U",
-                transpose: "T",
             };
         }
         return <View style={dir.browser}>
@@ -756,32 +754,43 @@ class Compare_ extends React.Component {
                     <Button
                         onPress={() => this.request({prefer: 1})}
                         title="Prefer"
+                        color="#999999"
                         accessibilityLabel="Prefer"
                         />
                 </View>
             </View>
             <View style={dir.compare_buttons}>
                 <Button
-                    onPress={() => this.request({too_close: true})}
-                    title={dir.too_close}
-                    accessibilityLabel="Too close to call"
+                    onPress={() => this.request({lock: null})}
+                    title={"Unlk"}
+                    color="#404040"
+                    style={styles.compare_button}
+                    />
+                <Button
+                    onPress={() => this.request({undo: true})}
+                    title={dir.undo}
+                    style={styles.compare_button}
+                    color="#404040"
+                    />
+                <Button
+                    onPress={() => this.request({incomparable: true, goes_well: true})}
+                    title={dir.goes}
+                    style={styles.compare_button}
+                    color="#404040"
                     />
                 <Button
                     onPress={() => this.request({incomparable: true})}
                     title={dir.incomparable}
                     accessibilityLabel="Doesn't make sense to compare"
+                    color="#404040"
+                    style={styles.compare_button}
                     />
                 <Button
-                    onPress={() => this.request({incomparable: true, goes_well: true})}
-                    title={dir.goes}
-                    />
-                <Button
-                    onPress={() => this.request({undo: true})}
-                    title={dir.undo}
-                    />
-                <Button
-                    onPress={() => this.setState({hor: !this.state.hor})}
-                    title={dir.transpose}
+                    onPress={() => this.request({too_close: true})}
+                    title={dir.too_close}
+                    accessibilityLabel="Too close to call"
+                    style={styles.compare_button}
+                    color="#404040"
                     />
             </View>
             <View style={styles.compare_pane}>
@@ -809,6 +818,7 @@ class Compare_ extends React.Component {
                 <View style={this.state.derp ? styles.compare_info_bottom : styles.compare_info_bottom2}>
                     <Button
                         onPress={() => this.request({prefer: 2})}
+                        color="#999999"
                         title="Prefer"
                         accessibilityLabel="Prefer"
                         />
@@ -862,7 +872,7 @@ class Similarity_ extends React.Component {
                         similarity
                     })};
                 }
-                var resp = await fetchpath("/api/compare/" + path, extra);
+                var resp = await fetchpath("/api/similarity/" + path, extra);
                 j = await resp.json();
                 comparecache[j.path] = j;
             }
@@ -904,14 +914,16 @@ class Similarity_ extends React.Component {
 
         //screen_key_callbacks['h'] = () => this.request({prefer: 2, fast: true, strong: 1});
         //screen_key_callbacks['n'] = () => this.props.redirect("/_/p" + (this.state.item2.path));
-        screen_key_callbacks['j'] = () => this.request({most_similar: [0,1], fast: true});
+        screen_key_callbacks['j'] = () => this.request({least_similar: 2, fast: true});
+        screen_key_callbacks['Meta-j'] = () => this.request({most_similar: 2, fast: true});
         //screen_key_callbacks['Shift-J'] = () => this.props.redirect("/_/history/" + this.state.item2.hash);
 
-        screen_key_callbacks['i'] = () => this.request({too_close: true, fast: true});
+        screen_key_callbacks['k'] = () => this.request({too_close: true, fast: true});
         screen_key_callbacks['8'] = () => this.request({not_sure: true, fast: true});
 
         //screen_key_callbacks['Shift-O'] = () => this.props.redirect("/_/history/" + this.state.item1.hash);
-        screen_key_callbacks['o'] = () => this.request({most_similar: [1,2], fast: true});
+        screen_key_callbacks['i'] = () => this.request({least_similar: 1, fast: true});
+        screen_key_callbacks['Meta-i'] = () => this.request({most_similar: 1, fast: true});
         //screen_key_callbacks['p'] = () => this.props.redirect("/_/p" + (this.state.item1.path));
         //screen_key_callbacks['0'] = () => this.request({prefer: 1, fast: true, strong: 1});
 
@@ -922,7 +934,8 @@ class Similarity_ extends React.Component {
         //screen_key_callbacks['Meta-o'] = () => this.request({lock: this.state.item1.hash});
 
         //screen_key_callbacks['u'] = () => this.request({undo: true, fast: true});
-        screen_key_callbacks['k'] = () => this.request({most_similar: [0,2], fast: true});
+        screen_key_callbacks['o'] = () => this.request({least_similar: 0, fast: true});
+        screen_key_callbacks['Meta-o'] = () => this.request({most_similar: 0, fast: true});
         //screen_key_callbacks[','] = () => this.request({incomparable: true, goes_well: true, fast: true});
 
         screen_key_callbacks['['] = () => this.props.history.goBack();
@@ -954,7 +967,7 @@ class Similarity_ extends React.Component {
         }
         return <View style={dir.browser}>
             <View style={dir.compare_pane}>
-                {this.state.item1 && 
+                {this.state.item2 && 
                 <File
                     in_compare={true}
                     imgurl={this.state.imgurl}
@@ -976,55 +989,25 @@ class Similarity_ extends React.Component {
                 </File>}
                 <View style={this.state.derp ? styles.compare_info_top : styles.compare_info_top2}>
                     <Button
-                        onPress={() => this.request({most_similar: [0, 1]})}
-                        title="closer"
-                        accessibilityLabel="closer"
+                        onPress={() => this.request({least_similar: 0})}
+                        title="Least sim."
+                        color="#999999"
+                        accessibilityLabel="Least similar image"
+                        />
+                    <Button
+                        onPress={() => this.request({most_similar: 0})}
+                        title="Most sim."
+                        color="#999999"
+                        style={styles.compare_inv_button}
+                        accessibilityLabel="Most similar image"
                         />
                 </View>
             </View>
-            <View style={dir.compare_pane}>
-                {this.state.item1 && 
-                <File
-                    in_compare={true}
-                    imgurl={this.state.imgurl}
-                    item={this.state.item1}
-                    next={this.state.item1}
-                    cols={1}
-                    info_top={true}
-                    info={this.state.info}
-                    setinfo={info => this.setState({info})}
-                >
-                    <View style={styles.blklst}>
-                    <Button
-                        onPress={() => this.request({dislike: [1,0,0]})}
-                        title="blklst"
-                        color="#be3e2e"
-                        accessibilityLabel="blklst"
-                        />
-                    </View>
-                </File>}
-                <View style={this.state.derp ? styles.compare_info_top : styles.compare_info_top2}>
-                    <Button
-                        onPress={() => this.request({most_similar: [0, 1]})}
-                        title=". closer >"
-                        accessibilityLabel="closer"
-                        />
-                </View>
-            </View>
-            {/*<View style={dir.compare_buttons}>
+            <View style={dir.compare_buttons}>
                 <Button
                     onPress={() => this.request({too_close: true})}
                     title={dir.too_close}
                     accessibilityLabel="Too close to call"
-                    />
-                <Button
-                    onPress={() => this.request({incomparable: true})}
-                    title={dir.incomparable}
-                    accessibilityLabel="Doesn't make sense to compare"
-                    />
-                <Button
-                    onPress={() => this.request({incomparable: true, goes_well: true})}
-                    title={dir.goes}
                     />
                 <Button
                     onPress={() => this.request({undo: true})}
@@ -1034,7 +1017,7 @@ class Similarity_ extends React.Component {
                     onPress={() => this.setState({hor: !this.state.hor})}
                     title={dir.transpose}
                     />
-            </View>*/}
+            </View>
             <View style={styles.compare_pane}>
                 {this.state.item2 && 
                 <File
@@ -1057,13 +1040,58 @@ class Similarity_ extends React.Component {
                     </View>
                 </File>}
                 
+                <View style={this.state.derp ? styles.compare_info_middle : styles.compare_info_middle2}>
+                    <Button
+                        onPress={() => this.request({least_similar: 1})}
+                        title="Least sim."
+                        color="#999999"
+                        accessibilityLabel="Least similar image"
+                        />
+                    <Button
+                        onPress={() => this.request({most_similar: 1})}
+                        title="Most sim."
+                        color="#999999"
+                        style={styles.compare_inv_button}
+                        accessibilityLabel="Most similar image"
+                        />
+                </View>
+            </View>
+            <View style={dir.compare_pane}>
+                {this.state.item3 && 
+                <File
+                    in_compare={true}
+                    imgurl={this.state.imgurl}
+                    item={this.state.item3}
+                    next={this.state.item3}
+                    cols={1}
+                    info_top={true}
+                    info={this.state.info}
+                    setinfo={info => this.setState({info})}
+                >
+                    <View style={styles.blklst}>
+                    <Button
+                        onPress={() => this.request({dislike: [0,0,1]})}
+                        title="blklst"
+                        color="#be3e2e"
+                        accessibilityLabel="blklst"
+                        />
+                    </View>
+                </File>}
                 <View style={this.state.derp ? styles.compare_info_bottom : styles.compare_info_bottom2}>
                     <Button
-                        onPress={() => this.request({most_similar: [0,2]})}
-                        title="< closer >"
-                        accessibilityLabel="< closer >"
+                        onPress={() => this.request({least_similar: 2})}
+                        title="Least sim."
+                        color="#999999"
+                        accessibilityLabel="Least similar image"
                         />
-                        </View>
+                    <Button
+                        onPress={() => this.request({most_similar: 2})}
+                        title="Most sim."
+                        color="#999999"
+                        style={styles.compare_inv_button}
+                        accessibilityLabel="Most similar image"
+                        />
+                </View>
             </View>
         </View>;
     }
@@ -1229,6 +1257,9 @@ const App = () => (
             <Route exact path="/_/settings/" component={Settings}/>
             <Route sensitive path="/_/compare/:rest*" component={Compare}/>
             <Route sensitive path="/_/history/:rest*" component={History}/>
+            <Route sensitive path="/_/similarity/:rest*" component={Similarity
+            
+            }/>
             <Route sensitive path="/_/p/:rest*" component={Browser}/>
         </Router>
     </View>
@@ -1277,6 +1308,9 @@ const styles = StyleSheet.create({
         flex: 1,
         position: 'relative',
     },
+    compare_button: {
+        marginLeft: 8,
+    },
     compare_pane_hor: {
         flex: 1,
         position: 'relative',
@@ -1290,6 +1324,7 @@ const styles = StyleSheet.create({
     },
     compare_buttons: {
         height: 32,
+        justifyContent: "space-between",
         marginTop: 4,
         marginBottom: 4,
         flexDirection: "row",
@@ -1297,33 +1332,49 @@ const styles = StyleSheet.create({
     },
     compare_info_top2: {
         position: 'absolute',
-        top: 60,
+        bottom: 80,
         right: 0,
-        flexDirection: "row",
+        flexDirection: "column",
         justifyContent: "space-between",
 
     },
     compare_info_bottom2: {
         position: 'absolute',
-        bottom: 60,
+        bottom: 130,
         right: 0,
-        flexDirection: "row",
+        flexDirection: "column",
         justifyContent: "space-between",
         alignItems: "flex-end",
     },
+    compare_info_middle2: {
+        position: 'absolute',
+        bottom: 80,
+        right: 0,
+        flexDirection: "column",
+        justifyContent: "space-between",
+
+    },
+    compare_info_middle: {
+        position: 'absolute',
+        bottom: 60,
+        right: 0,
+        flexDirection: "column",
+        justifyContent: "space-between",
+
+    },
     compare_info_top: {
         position: 'absolute',
-        top: 0,
+        bottom: 40,
         right: 0,
-        flexDirection: "row",
+        flexDirection: "column",
         justifyContent: "space-between",
 
     },
     compare_info_bottom: {
         position: 'absolute',
-        bottom: 0,
+        bottom: 90,
         right: 0,
-        flexDirection: "row",
+        flexDirection: "column",
         justifyContent: "space-between",
         alignItems: "flex-end",
     },
@@ -1437,6 +1488,9 @@ const styles = StyleSheet.create({
     blklst: {
         marginTop: 40,
         marginBottom: 40
+    },
+    compare_inv_button: {
+        marginTop: 20
     }
 
 })

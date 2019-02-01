@@ -1,11 +1,23 @@
 import time
 import numpy
+import itertools
 
 def add(self, x):
     if x in self.ids:
         raise Exception()
     self.ids[x] = len(self.all_items)
     self.all_items.append(x)
+
+def add_sim(self, x):
+    if x in self.ids_sim:
+        raise Exception()
+    self.ids_sim[x] = len(self.all_sim_items)
+    self.all_sim_items.append(x)
+
+def getid_sim(self, x):
+    if x not in self.ids_sim:
+        self.add_sim(x)
+    return self.ids_sim[x]
 
 def getid(self, x):
     if x not in self.ids:
@@ -158,6 +170,55 @@ def calculate_ranking(self, stats, extra=False):
         #    return True
         return False
         #print(self.clamp(self.model - prev))
+
+def build_sim_data(self, stats):
+    from web.util import nanguard
+    triplets = [(tuple(self.getid_sim(x) for x in key),vals) for key, vals in stats.triplet_diffs.items() if not any(self.is_dropped(stats, x) for x in key)]
+    edges = list(itertools.chain.from_iterable(itertools.combinations(key, 2) for key, val in triplets))
+    edge_ratios = list(itertools.chain.from_iterable(
+                (
+                    ((edge1[0], edge2[0]), nanguard(edge1[1]/(edge1[1]+edge2[1])), nanguard(edge1[1]+edge2[1]))
+                    for edge1, edge2
+                    in itertools.combinations((
+                        ((vert1[0], vert2[0]), nanguard(vert1[1]+vert2[1]), vert1, vert2)
+                        for vert1, vert2
+                        in itertools.combinations(zip(key, val), 2)
+                    ), 2)
+                )
+                for key, val
+                in triplets
+                ))
+    targ = [nanguard(x[1]) for x in edge_ratios]
+    return edges, edge_ratios, targ
+
+def calculate_embedding(self, stats):
+    from web import choix_custom
+    from web import opts
+    import torch
+    self.all_sim_items = []
+    for i, x in list(enumerate(self.all_sim_items))[::-1]:
+        if self.is_dropped(stats, x):
+            self.all_sim_items.pop(i)
+            if len(self.vec_means) > i:
+                print(i)
+                self.vec_means = numpy.delete(self.vec_means, i, 0)
+                self.vec_stds = numpy.delete(self.vec_stds, i, 0)
+    edges, edge_ratios, targ = self.build_sim_data(stats)
+
+    vec_means, vec_stds = choix_custom.embedding(
+            self.all_sim_items, edges, edge_ratios, targ,
+            torch.tensor(self.vec_means), torch.tensor(self.vec_stds))
+    self.vec_means = vec_means.detach().cpu().numpy()
+    self.vec_stds = vec_stds.detach().cpu().numpy()
+    self.searching_pool_sim = {self.all_sim_items[i]: float(torch.sqrt(torch.sum(x**2)).detach().cpu().numpy()) for i, x in enumerate(vec_stds) if torch.sqrt(torch.sum(x**2)) > opts.similarity_std_threshold}
+    means = vec_means.detach()
+    normed_means = means / torch.mean(means, 1, keepdim=True)
+    directions = torch.abs(torch.mm(normed_means, torch.abs(vec_stds.detach()).t()))
+    normed_directions = directions / torch.mean(directions, 0, keepdim=True)
+    normed_directions = normed_directions / torch.mean(directions, 1, keepdim=True)
+    self.next_directions = normed_directions.detach().cpu().numpy()
+    print(f"calculate_embedding: searching_pool_sim={len(self.searching_pool_sim)}")
+
 
 def getidx(self, val):
     from web.util import nanguard
@@ -583,11 +644,13 @@ def calculate_dists(self, stats, comparisons, h):
             continue
     return dists, weights
 
-def slow_calculations(self, stats, hashes_to_debug, extra=False):
-    more = self.calculate_ranking(stats, extra)
+def slow_calculations(self, stats, hashes_to_debug, extra=False, types=["ranking", "similarity"]):
+    if "ranking" in types or "all" in types:
+        self.calculate_ranking(stats, extra)
+    if "similarity" in types or "all" in types:
+        self.calculate_embedding(stats)
     self.calculate_nearest_neighborhood(stats, hashes_to_debug, extra)
     self.update_new_pool(stats)
-    return more
 
 def __repr__(self):
     return f"Model(all_items={self.all_items}, model={self.model.tolist()}, searching_pool={self.searching_pool}, inversions={self.inversions})"

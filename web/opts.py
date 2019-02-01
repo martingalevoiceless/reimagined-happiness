@@ -50,10 +50,10 @@ def neighborhood_func(x):
 def inversion_precision_func(x):
     #(opts.min_target_precision + (pos ** opts.target_precision_curve) * opts.target_precision_top)
     #min_target_precision = 4
-    J = 6.0
-    z = 2 ** 13
+    J = 8.6
+    z = 2 ** 2.6
     j = 1+(J/z)
-    m = 100
+    m = 10
     return m+j**(z**x)-j
     #return 2+x*20
     #target_precision_curve = 40
@@ -101,3 +101,6 @@ weighted_softmin_sharpness = 4
 
 ambiguity_threshold = 0.5
 
+
+similarity_std_threshold = 0.20
+sim_explore_target = 30

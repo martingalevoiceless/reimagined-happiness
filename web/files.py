@@ -196,7 +196,7 @@ class FilesCache:
                             break
                 with timing("make sure hashes are up to date"):
                     for h, v in self.by_hash.items():
-                        assert v["hash"] == h
+                        assert v["hash"] == h, f"hashes mismatch: {v}, {h}"
                         v["hash"] = h
                 with timing("merge dupes"):
                     try:

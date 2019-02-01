@@ -1,4 +1,5 @@
 import numpy
+import itertools
 import random
 import json
 import sys
@@ -143,7 +144,7 @@ def read(self):
     if self.do_reap and os.path.exists(self.preffile):
         wait = not self.reap_slow(eager=True)
         if self.do_update:
-            self.launch_slow(wait=wait)
+            self.launch_slow("ranking", "similarity", "all", wait=wait)
 
 def geth(self, x):
     if x not in self.bh and x.partition(":")[0] in self.bh:
@@ -244,7 +245,7 @@ def select_next(self, path):
                         first = self.geth(self.lock)
                         firstlabel = "lock"
                         force_neighborhood = True
-                    elif self.current:
+                    elif self.current and len(self.current) == 2:
                         with timing("current"):
                             firsth, secondh = self.current
                             first = self.geth(firsth)
@@ -447,7 +448,60 @@ def select_next(self, path):
         return a, b, proba, probb, info
 
 def select_next_similarity(self, path):
-    pass
+    # won't work with less than three ranked items
+    from web.util import softmax
+    from web import opts
+    self.reap_slow()
+    print("searching_pool_sim size:", len(self.model_.searching_pool_sim))
+    print("next_directions:", self.model_.next_directions.shape)
+    hashes = []
+    weighted_pool = [(x[0], x[1] * numpy.exp((self.model_.getval(x[0]) or 0)/self.model_.max())) for x in self.model_.searching_pool_sim.items()]
+    total_weight = sum(x[1] for x in weighted_pool)
+    print("total_weight", total_weight)
+    if random.random() > total_weight / opts.sim_explore_target:
+        hashes.append((random.choice(self.model_.all_items), "rand_first"))
+    else:
+        keys = numpy.asarray([x[0] for x in weighted_pool])
+        vals = numpy.asarray([x[1] for x in weighted_pool])
+        hashes.append((numpy.random.choice(keys, p=softmax(vals)), "searching_pool_sim"))
+    cap = 0
+    while len(hashes) < 3 and cap < 50:
+        cap += 1
+        if random.random() < 0.2 and not len(self.model_.next_directions) or random.random() > len(self.model_.searching_pool_sim) / opts.sim_explore_target:
+            hashes.append((random.choice(self.model_.all_items), "rand_other"))
+        elif hashes[0][0] in self.model_.ids_sim:
+            h = hashes[0][0]
+            hidx = self.model_.getid_sim(h)
+            hashes.extend([
+                (x, "next_directions")
+                for x
+                in numpy.random.choice(self.model_.all_sim_items[:len(self.model_.vec_stds)], size=(3-len(hashes),), p=softmax(self.model_.next_directions[:, hidx]))
+            ])
+        else:
+            #import json
+            #print(f"{hashes[0]} not in {json.dumps(self.model_.ids_sim, indent=1, sort_keys=True)}")
+            hashes.append((random.choice(self.model_.all_sim_items), "rand_other_sim"))
+        if cap < 48:
+            keys = set()
+            h2 = []
+            for x, l in hashes:
+                # dumb deduplicate
+                if x in keys:
+                    print("SKIP DUPE", cap)
+                    continue
+                keys.add(x)
+                h2.append((x,l))
+            hashes=h2
+
+    random.shuffle(hashes)
+    a,b,c = [self.geth(x) for x, l in hashes]
+    infos = self.getinfo(a,b,c)
+    for i, hi in zip(infos, hashes):
+        i.append(hi[1])
+    proba, probb, probc = infos
+    info = {"t": ["fullrand", "fullrand", "fullrand"], "i": [proba, probb, probc]}
+    #print(a,b,c)
+    return a,b,c,proba,probb,probc, info
 
     #for d, vs in sorted(list(ds.items())):
     #    print(f"{d}: {len(vs):6d} samples, {numpy.std(vs):6.3f} std, {numpy.mean(vs):6.3f} mean, {min(vs):6.3f} min, {max(vs):6.3f} max, {numpy.median(vs):6.3f} median")
@@ -523,6 +577,28 @@ def getinfo(self, *hs, bulk_seen=None, do_seen=True, pools=True, details=True, d
                 x.extend(ires)
         result[0].append(f"{100*(wins_a/(max(wins_b+wins_a, 0.0001))):0.1f}% ratio ({wins_a:0.2f}/{wins_b:0.2f}), model={100*proba:.1f}%, ")
         result[1].append(f"{100*(wins_b/(max(wins_a+wins_b, 0.0001))):0.1f}% ratio ({wins_b:0.2f}/{wins_a:0.2f}), model={100*probb:.1f}%, ")
+    if len(hs) == 3:
+        a, b, c = hs
+        pair, res_sorted = as_pair(a, b, c, extras=result)
+        triplet = self.stats.triplet_diffs.get(pair, (0,0,0))
+        for res_x, val in zip(res_sorted, triplet):
+            res_x.append(f"least sim count: {val}")
+    for c1, c2 in itertools.combinations(zip(itertools.count(), hs, result), 2):
+        p1, h1, r1 = c1
+        p2, h2, r2 = c2
+        i1 = self.model_.getid_sim(h1)
+        i2 = self.model_.getid_sim(h2)
+        if i1 < len(self.model_.vec_means) and i2 < len(self.model_.vec_means):
+            v1 = self.model_.vec_means[i1]
+            v2 = self.model_.vec_means[i2]
+            dist = numpy.sqrt(numpy.sum((v1-v2) ** 2))
+            dot = numpy.dot(v1, v2)
+            r1.append(f"vecinfo {p2-p1}: dist={dist:0.2f}, dot={dot:0.2f}")
+            r2.append(f"vecinfo {p1-p2}: dist={dist:0.2f}, dot={dot:0.2f}")
+
+
+
+
     if debugpools:
         for res, h in zip(result, hs):
             v = self.geth(h)
@@ -556,46 +632,55 @@ def reap_slow(self, wait=False, eager=False):
                 with timing("load"):
                     if os.path.exists(self.readyfile) and self.do_update:
                         os.unlink(self.readyfile)
+                    try:
                     # have one waiting to read
-                    with timing("read"):
-                        with open(self.outputfile, "rb") as reader:
-                            packed_model = msgpack.unpack(reader, use_list=False, raw=False)
-                    with timing("model()"):
-                        old_m = self.model_.model
-                        self.model_ = Model(*packed_model)
-                        new_m = self.model_.model
-                        min_l = min(len(old_m), len(new_m))
-                        delta = numpy.sum(numpy.abs(old_m[:min_l] - new_m[:min_l]))
-                        print("reap model calculation, delta:", delta)
-                    with timing("fixh"):
-                        self.model_.fixh(self.fh)
-                    self.removed_pool = set()
-                    self.extra_pool = set()
-                    self.inversion_fixes = {}
-                    self.fixed_inversions = set()
-                    self.dirty = set()
-                    self.read_needed = False
+                        with timing("read"):
+                            with open(self.outputfile, "rb") as reader:
+                                packed_model = msgpack.unpack(reader, use_list=False, raw=False)
+                        print("searching_pool_sim to_main from_msgpack", len(packed_model[9]) if packed_model is not None else None)
+                        with timing("model()"):
+                            old_m = self.model_.model
+                            self.model_ = Model(*packed_model)
+                            new_m = self.model_.model
+                            min_l = min(len(old_m), len(new_m))
+                            delta = numpy.sum(numpy.abs(old_m[:min_l] - new_m[:min_l]))
+                            print("reap model calculation, delta:", delta)
+                        with timing("fixh"):
+                            self.model_.fixh(self.fh)
+                        self.removed_pool = set()
+                        self.extra_pool = set()
+                        self.inversion_fixes = {}
+                        self.fixed_inversions = set()
+                        self.dirty = set()
+                        self.read_needed = False
+                    except ValueError as e:
+                        print("error reading model", e)
+                        return False
                     return True
         return False
 
-def launch_slow(self, wait=False):
+def launch_slow(self, *types, wait=False):
     from web.util import timing
     with timing("launch_slow"):
         if not self.do_update:
             raise Exception()
-        with timing("to_msgpack (dicts)"):
-            packed_stats = self.stats.to_msgpack()
-            packed_model = self.model_.to_msgpack(include_derived=False)
+        #with timing("to_msgpack (dicts)"):
+        #    packed_stats = self.stats.to_msgpack()
+        #    packed_model = self.model_.to_msgpack("from_main", include_derived=False)
+        #    print("searching_pool_sim from_main", packed_model[-2])
         with timing("write"):
             self.read_needed = True
-            with open(self.inputfile, "wb") as writer:
-                msgpack.pack([packed_stats, packed_model], writer, use_bin_type=True)
+            with open(self.infofile, "a") as writer:
+                writer.write("\n".join(types))
+                writer.write("\n")
+            #with open(self.inputfile, "wb") as writer:
+            #    msgpack.pack([packed_stats, packed_model], writer, use_bin_type=True)
         if os.path.exists(self.completionfile):
             os.unlink(self.completionfile)
 
         with timing("launch"):
             if self.subproc is None:
-                args = [sys.executable, "-m", "web", self.files.base, self.preffile, self.outputfile, self.completionfile, self.readyfile]
+                args = [sys.executable, "-m", "web", self.files.base, self.infofile, self.preffile, self.outputfile, self.completionfile, self.readyfile]
                 print(" ".join(args))
                 self.subproc = subprocess.Popen(args, stdin=open(os.devnull, "rb"))
         if wait:
@@ -617,6 +702,8 @@ def update(self, info, file1, file2, file3=None):
         if "similarity" in a:
             self.history.append(a)
             self.stats.update(a)
+            self.current = None
+            self.launch_slow("similarity")
             return
         elif "lock" in a.get("preference",{}):
             self.lock = a.get("preference",{}).get("lock")
@@ -627,7 +714,7 @@ def update(self, info, file1, file2, file3=None):
                 self.force_current = True
                 self.stats = Stats()
                 self.stats.from_history(self.history)
-            self.launch_slow()
+            self.launch_slow("ranking" if "preference" in prev else "similarity")
         elif a.get("preference",{}).get("not_sure"):
             self.seen_allowed.add(file1)
             self.seen_allowed.add(file2)
@@ -643,4 +730,4 @@ def update(self, info, file1, file2, file3=None):
                     self.inversion_fixes[pair] = self.inversion_fixes.get(pair, 0) + 1
                     if self.inversion_fixes[pair] > 2 or not self.model_.check_inversion(self.stats, pair)[1]:
                         self.fixed_inversions.add(pair)
-            self.launch_slow()
+            self.launch_slow("ranking")
